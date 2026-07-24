@@ -813,6 +813,11 @@ async function handleStatus(res: http.ServerResponse) {
 /**
  * GET /api/v1/health - Lite health check
  */
+function handleIndex(res) {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(CHAT_UI_HTML);
+}
+
 async function handleHealth(res: http.ServerResponse) {
   let rpcOk = false;
   let slot = 0;
