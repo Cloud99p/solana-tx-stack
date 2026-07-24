@@ -109,9 +109,9 @@
   </div>
   <div class="chat-area" id="chatArea">
     <div class="msg agent">
-      <div class="avatar">⚡</div>
+      <div class="avatar">S</div>
       <div class="bubble">
-Hey! I'm the <strong>Solana MEV Agent</strong> — your AI-powered Jito bundle specialist. ⚡<br><br>
+Hey! I'm the <strong>Solana MEV Agent</strong> — your AI-powered Jito bundle specialist.<br><br>
 I can submit MEV bundles, check Solana network health, analyze transactions, and more. Just tell me what you need!
       </div>
     </div>
@@ -143,9 +143,9 @@ async function loadStats() {
     document.getElementById('statUptime').textContent = d.uptimeHuman || '…';
     document.getElementById('statBundles').textContent = (d.stats?.totalBundles||0) + ' (' + (d.stats?.bundleSuccessRate||'N/A') + ')';
     const jitoOk = d.stack?.jito?.includes('connected');
-    document.getElementById('statJito').textContent = jitoOk ? '⚡ Live' : 'Off';
+    document.getElementById('statJito').textContent = jitoOk ? 'Live' : 'Off';
     document.getElementById('statJito').style.color = jitoOk ? 'var(--success)' : 'var(--error)';
-    document.getElementById('statAI').textContent = d.ai?.deepseekEnabled ? '🧠 Live' : 'Off';
+    document.getElementById('statAI').textContent = d.ai?.deepseekEnabled ? 'Live' : 'Off';
     document.getElementById('statAI').style.color = d.ai?.deepseekEnabled ? 'var(--success)' : 'var(--text2)';
     document.getElementById('statusDot').className = 'status-dot online';
     document.getElementById('statusText').textContent = 'online';
@@ -170,11 +170,11 @@ function addMessage(role, content, tools) {
   const area = document.getElementById('chatArea');
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  const emoji = role === 'agent' ? '⚡' : '👤';
+  const emoji = role === 'agent' ? 'A' : 'U';
   let toolBadges = '';
   if (tools && tools.length > 0) {
     toolBadges = '<div style="margin-top:6px">' +
-      tools.map(t => '<span class="tool-badge '+(t.success?'':'fail')+'">🔧 '+t.tool+'</span>').join(' ') +
+      tools.map(t => '<span class="tool-badge '+(t.success?'':'fail')+'">'+t.tool+'</span>').join(' ') +
       '</div>';
   }
   div.innerHTML = '<div class="avatar">'+emoji+'</div><div class="bubble">'+formatContent(content)+toolBadges+'</div>';
@@ -198,7 +198,7 @@ function addThinking() {
   const div = document.createElement('div');
   div.className = 'msg agent';
   div.id = 'thinkingMsg';
-  div.innerHTML = '<div class="avatar">⚡</div><div class="bubble"><div class="thinking"><span></span><span></span><span></span></div></div>';
+  div.innerHTML = '<div class="avatar">A</div><div class="bubble"><div class="thinking"><span></span><span></span><span></span></div></div>';
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
 }
@@ -230,11 +230,11 @@ async function sendMessage() {
     if (data.response) {
       addMessage('agent', data.response, data.toolCalls);
     } else {
-      addMessage('agent', '⚠️ Sorry, I ran into an issue. Try again?');
+      addMessage('agent', 'Sorry, I ran into an issue. Try again?');
     }
   } catch(e) {
     removeThinking();
-    addMessage('agent', '⚠️ Could not reach the agent server.\n\nMake sure Railway is running: ' + API_BASE);
+    addMessage('agent', 'Could not reach the agent server.\n\nMake sure Railway is running: ' + API_BASE);
   }
 
   fetching = false;
