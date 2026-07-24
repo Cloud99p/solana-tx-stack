@@ -1,0 +1,9 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "frontend",
+  "installCommand": "",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://solana-mev-agent-okx-production.up.railway.app/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
