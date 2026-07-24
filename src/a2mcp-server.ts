@@ -715,9 +715,6 @@ async function handleStatus(res: http.ServerResponse) {
 /**
  * GET /api/v1/health - Lite health check
  */
-);
-  res.end(CHAT_UI_HTML);
-}
 async function handleHealth(res: http.ServerResponse) {
   let rpcOk = false;
   let slot = 0;
