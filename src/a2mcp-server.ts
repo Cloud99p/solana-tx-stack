@@ -986,6 +986,7 @@ function formatUptime(seconds: number): string {
 // ===== Router =====
 const routes: Record<string, Record<string, (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>>> = {
   GET: {
+    '/': async (req, res) => { await handleIndex(res); },
     '/health': async (req, res) => { await handleHealth(res); },
     '/api/v1/health': async (req, res) => { await handleHealth(res); },
     '/api/v1/status': async (req, res) => { await handleStatus(res); },
