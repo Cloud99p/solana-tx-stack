@@ -13,17 +13,14 @@
  * @author Cloud99p
  * @license MIT
  */
-
 import dotenv from 'dotenv';
 dotenv.config();
-
 import http from 'http';
 import * as crypto from 'crypto';
 import { URL } from 'url';
 import { Connection, Keypair, PublicKey, VersionedTransaction, Transaction, TransactionMessage } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
-
 // ===== Stack Imports =====
 import { JitoManager } from './jito-manager.js';
 import { HebbianTipOptimizer } from './hebbian-optimizer.js';
@@ -39,7 +36,6 @@ import { FaultInjector, FaultType } from './fault-injector.js';
 import { getTipOracle, getMarketContext } from './tip-oracle.js';
 import { getWebhookManager } from './webhooks.js';
 import { ChatAgent, getChatAgent, ChatAgentConfig } from './chat-agent.js';
-
 // ===== Configuration =====
 const PORT = parseInt(process.env.PORT || '8080');
 const RPC_URL = process.env.SOLANA_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -50,7 +46,6 @@ const AGENT_VERSION = process.env.AGENT_VERSION || '2.0.0-a2mcp';
 const X402_ENABLED = process.env.X402_ENABLED === 'true';
 const X402_WALLET = process.env.X402_WALLET || '';
 const AUTH_KEYPAIR_PATH = process.env.JITO_AUTH_KEYPAIR_PATH || process.env.AUTH_KEYPAIR_PATH || '';
-
 // Railway compat: decode base64 keypair env var to disk if file doesn't exist
 function ensureKeypairFile(): void {
   const b64 = process.env.JITO_AUTH_KEYPAIR_B64 || '';
@@ -71,15 +66,12 @@ function ensureKeypairFile(): void {
 }
 ensureKeypairFile();
 const DEBUG = process.env.DEBUG === 'true';
-
 // Pricing
 const PRICE_PER_BUNDLE = parseInt(process.env.PRICE_PER_BUNDLE || '1');
 const PRICE_PER_ANALYSIS = parseInt(process.env.PRICE_PER_ANALYSIS || '1');
 const MIN_TIP = parseInt(process.env.MIN_TIP_LAMPORTS || '1000');
-
 // ===== Solana Connection =====
 const connection = new Connection(RPC_URL, { commitment: SOLANA_COMMITMENT as any });
-
 // ===== Stack Components =====
 let jitoManager: JitoManager | null = null;
 let hebbianOptimizer: HebbianTipOptimizer | null = null;
@@ -90,33 +82,25 @@ let networkHealth: NetworkHealthCalculator | null = null;
 let faultInjector: FaultInjector | null = null;
 let chatAgent: ChatAgent | null = null;
 let jitoReady = false;
-
 async function initializeStack() {
   console.log('[STACK] Initializing solana-tx-stack components...');
-
   // 0. Ensure jito-ts protobuf stubs exist
   ensureJitoStubs();
-
   // 1. Hebbian Optimizer
   hebbianOptimizer = new HebbianTipOptimizer();
   console.log('[STACK] HebbianTipOptimizer initialized');
-
   // 2. Proof Chain (cryptographic audit trail)
   proofChain = new DecisionProofChain();
   console.log('[STACK] DecisionProofChain initialized');
-
   // 3. Knowledge Graph (pattern discovery)
   knowledgeGraph = new TransactionKnowledgeGraph();
   console.log('[STACK] TransactionKnowledgeGraph initialized');
-
   // 4. Network Health Calculator
   networkHealth = new NetworkHealthCalculator(connection);
   console.log('[STACK] NetworkHealthCalculator initialized');
-
   // 5. Fault Injector
   faultInjector = new FaultInjector(connection);
   console.log('[STACK] FaultInjector initialized (7 fault types)');
-
   // 6. Failure Reasoning Agent (with DeepSeek if AI_API_KEY configured)
   try {
     const cfg = loadConfig();
@@ -125,13 +109,11 @@ async function initializeStack() {
   } catch (err: any) {
     console.warn('[STACK] FailureReasoningAgent init skipped:', err.message);
   }
-
   // 7. Jito Manager (only if keypair exists)
   if (AUTH_KEYPAIR_PATH) {
     const resolvedPath = path.isAbsolute(AUTH_KEYPAIR_PATH)
       ? AUTH_KEYPAIR_PATH
       : path.resolve(process.cwd(), AUTH_KEYPAIR_PATH);
-
     if (fs.existsSync(resolvedPath)) {
       try {
         jitoManager = new JitoManager(connection);
@@ -148,7 +130,6 @@ async function initializeStack() {
   } else {
     console.warn('[STACK] No AUTH_KEYPAIR_PATH set. Bundle submission disabled.');
   }
-
   // Chat agent
   if (process.env.AI_API_KEY && process.env.AI_API_KEY !== 'sk-you…here') {
     const chatConfig: ChatAgentConfig = {
@@ -161,10 +142,8 @@ async function initializeStack() {
   } else {
     console.warn('[AGENT] Chat agent not initialized — AI_API_KEY not configured');
   }
-
   console.log(`[STACK] Ready - Jito: ${jitoReady ? 'LIVE' : 'API-ONLY'} | Chat: ${chatAgent ? 'LIVE' : 'OFF'}`);
 }
-
 // ===== State =====
 let serverStartTime = Date.now();
 let requestCount = 0;
@@ -173,22 +152,17 @@ let errorCount = 0;
 let bundleSuccessCount = 0;
 let bundleFailCount = 0;
 const recentRequests: Array<{ timestamp: number; method: string; url: string; status: number }> = [];
-
 // Revenue tracking
 let totalRevenueUsdt = 0;
 let todayRevenueUsdt = 0;
 let lastRevenueResetDay = new Date().getDate();
-
 // Auto-retry config
 const MAX_RETRIES = 3;
 const RETRY_TIP_MULTIPLIERS = [1.15, 1.25, 1.40];
-
 // Tip Oracle & Webhook Manager singletons
 const tipOracle = getTipOracle();
 const webhookManager = getWebhookManager();
-
 // ===== Helpers =====
-
 function jsonResponse(res: http.ServerResponse, status: number, data: any) {
   const body = JSON.stringify(data, null, 2);
   res.writeHead(status, {
@@ -199,16 +173,13 @@ function jsonResponse(res: http.ServerResponse, status: number, data: any) {
   });
   res.end(body);
 }
-
 function success(res: http.ServerResponse, data: any) {
   jsonResponse(res, 200, { success: true, ...data });
 }
-
 function error(res: http.ServerResponse, status: number, message: string, details?: any) {
   errorCount++;
   jsonResponse(res, status, { success: false, error: message, details });
 }
-
 function parseBody(req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -223,7 +194,6 @@ function parseBody(req: http.IncomingMessage): Promise<any> {
     req.on('error', reject);
   });
 }
-
 function logRequest(req: http.IncomingMessage, status: number) {
   requestCount++;
   recentRequests.push({
@@ -235,28 +205,23 @@ function logRequest(req: http.IncomingMessage, status: number) {
   if (recentRequests.length > 100) recentRequests.shift();
   if (DEBUG) console.log(`[REQ] ${req.method} ${req.url} → ${status}`);
 }
-
 // ===== x402 Payment Verification =====
 function checkX402Payment(req: http.IncomingMessage): { paid: boolean; amount?: number; error?: string } {
   if (!X402_ENABLED) {
     return { paid: true };
   }
-
   const payment = req.headers['x-402-payment'] as string;
   const signature = req.headers['x-402-signature'] as string;
   const nonce = req.headers['x-402-nonce'] as string;
-
   if (!payment) {
     return {
       paid: false,
       error: 'x402 payment required'
     };
   }
-
   console.log(`[x402] Payment: ${payment} | Nonce: ${nonce}`);
   return { paid: true, amount: parseInt(payment) || 0 };
 }
-
 function x402PaymentRequired(res: http.ServerResponse, amountUsdt: number) {
   jsonResponse(res, 402, {
     error: 'Payment Required',
@@ -269,9 +234,7 @@ function x402PaymentRequired(res: http.ServerResponse, amountUsdt: number) {
     }
   });
 }
-
 // ===== Handlers =====
-
 /**
  * POST /api/v1/bundle
  * Submit transactions as a Jito bundle with Hebbian-optimized tip
@@ -280,17 +243,13 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
   try {
     const payment = checkX402Payment(req);
     if (!payment.paid) { x402PaymentRequired(res, PRICE_PER_BUNDLE); return; }
-
     const body = await parseBody(req);
     const { transactions, tipLamports, priority, webhookUrl } = body;
-
     if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
       error(res, 400, 'Missing or invalid transactions array');
       return;
     }
-
     console.log(`[BUNDLE] ${transactions.length} tx(s) received`);
-
     const slot = await connection.getSlot();
     const result: any = {
       slot,
@@ -298,12 +257,10 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
       jitoReady,
       retries: [] as any[],
     };
-
     const tipRec = await tipOracle.getRecommendedTip(priority || 'medium');
     const initialTip = Math.max(tipLamports || tipRec.lamports, 1000);
     const marketContext = await tipOracle.getMarketContext();
     result.marketTipFloor = marketContext;
-
     if (jitoReady && jitoManager) {
       const decodedTxs: VersionedTransaction[] = [];
       const deserializeErrors: string[] = [];
@@ -331,30 +288,25 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
       if (deserializeErrors.length > 0) {
         console.warn('[BUNDLE] Partial deserialization:', deserializeErrors.join(' | '));
       }
-
       const resolvedPath = path.isAbsolute(AUTH_KEYPAIR_PATH)
         ? AUTH_KEYPAIR_PATH
         : path.resolve(process.cwd(), AUTH_KEYPAIR_PATH);
       const keypairData = fs.readFileSync(resolvedPath, 'utf-8');
       const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keypairData)));
-
       // === AUTO-RETRY LOOP (max 3 retries with escalating tips) ===
       let currentTip = initialTip;
       let overallSuccess = false;
       let finalBundleId: string | null = null;
       let healthScore: number | undefined;
       let grpcError: string | undefined;
-
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         console.log(`[RETRY] Attempt ${attempt + 1}/${MAX_RETRIES + 1} tip: ${currentTip} lamports`);
-
         try {
           const submitResult = await jitoManager.submitBundle(decodedTxs, payer.publicKey, currentTip);
           overallSuccess = true;
           finalBundleId = submitResult.bundleId;
           healthScore = submitResult.healthScore;
           grpcError = submitResult.grpcError;
-
           if (hebbianOptimizer) {
             await hebbianOptimizer.learn({ tipLamports: currentTip, status: "submitted", healthScore: healthScore || 70, skipRate: 0.15, leaderQuality: 0.8 });
           }
@@ -364,41 +316,34 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
           console.warn(`[RETRY] Attempt ${attempt + 1} failed: ${err.message}`);
           const isStructural = err.message.includes('deserialize') || err.message.includes('buffer') || err.message.includes('signature');
           result.retries.push({ attempt: attempt + 1, status: "failed", tip: currentTip, error: err.message });
-
           if (isStructural) {
             result.message = 'Structural error aborting';
             result.error = err.message;
             break;
           }
-
           if (hebbianOptimizer) {
             await hebbianOptimizer.learn({ tipLamports: currentTip, status: "failed", healthScore: 50, skipRate: 0.15, leaderQuality: 0.5 });
           }
-
           if (attempt < MAX_RETRIES) {
             currentTip = Math.round(currentTip * RETRY_TIP_MULTIPLIERS[attempt]);
-
             if (attempt === 0 && failureAgent) {
               try {
                 const failureType: FailureType = err.message.includes('blockhash') || err.message.includes('expire') ? 'expired_blockhash'
                   : err.message.includes('fee') || err.message.includes('tip') ? 'fee_too_low'
                     : err.message.includes('timeout') ? 'timeout'
                       : err.message.includes('compute') ? 'compute_exceeded' : 'bundle_rejected';
-
                 const fc: FailureContext = {
                   failureType, failureStage: "submitted", submissionSlot: slot, submissionTimestamp: Date.now(),
                   blockhashSlot: slot, blockhashAge: 0,
                   slotConditions: { skipRate: 0.15, congestionLevel: 0.3, leaderQuality: 0.75 },
                   recentTips: [marketContext.tipFloorLamports], submissionLatency: 0,
                 };
-
                 const retryParams: RetryParameters = await failureAgent.analyzeFailure(fc);
                 result.deepseek = {
                   enabled: true, confidence: retryParams.reasoning.confidence, action: retryParams.reasoning.decision.action,
                   reasoning: retryParams.reasoning.decision.reasoning_summary,
                   retryParameters: { shouldRetry: retryParams.shouldRetry, tipAdjustmentPercent: retryParams.tipAdjustment, delayMs: retryParams.delayMs, refreshBlockhash: retryParams.refreshBlockhash },
                 };
-
                 if (retryParams.shouldRetry && retryParams.tipAdjustment > 0) {
                   currentTip = Math.round(currentTip * (1 + retryParams.tipAdjustment / 100));
                 }
@@ -406,12 +351,10 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
                 console.warn('[AGENT] Failure analysis skipped:', e.message);
               }
             }
-
             await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
           }
         }
       }
-
       bundleCount++;
       if (overallSuccess) {
         bundleSuccessCount++;
@@ -422,11 +365,9 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
       } else {
         bundleFailCount++;
       }
-
       const recommendation = hebbianOptimizer?.recommendTip
         ? await hebbianOptimizer.recommendTip({ healthScore: healthScore || 70, skipRate: 0.15, leaderQuality: 0.8 })
         : null;
-
       result.bundleId = finalBundleId || ("bundle_" + Date.now());
       result.networkHealth = healthScore || null;
       result.recommendedTip = recommendation?.recommendedTip || currentTip;
@@ -437,11 +378,9 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
         : "Bundle submission failed after retries";
       result.totalRetries = result.retries.length - 1;
       result.overallStatus = overallSuccess ? "submitted" : "failed";
-
       if (webhookUrl) {
         webhookManager.fire(result.bundleId, { status: overallSuccess ? "submitted" : "failed", slot, bundleId: result.bundleId, error: result.error || null, retries: result.totalRetries, pricing: { charged: payment.amount || PRICE_PER_BUNDLE, unit: "USDT" } });
       }
-
       if (proofChain) {
         proofChain.recordDecision(
           { bundleId: result.bundleId || ("bundle_" + Date.now()), failureType: overallSuccess ? 'submitted' : 'bundle_rejected', stage: 'submitted', submissionSlot: slot, blockhashAge: 0, slotConditions: { skipRate: 0.15, congestionLevel: 0.3, leaderQuality: 0.75 }, recentTips: [marketContext.tipFloorLamports], submissionLatency: 0 },
@@ -455,13 +394,11 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
       result.recommendedTip = initialTip;
       result.networkHealth = 'N/A (no connection)';
     }
-
     success(res, {
       bundleId: result.bundleId || ("bundle_" + Date.now()),
       details: result,
       pricing: { charged: payment.amount || PRICE_PER_BUNDLE, unit: "USDT" },
     });
-
     if (webhookUrl && !jitoReady) {
       webhookManager.fire(result.bundleId || ("bundle_" + Date.now()), {
         status: "prepared", slot, error: "Jito not connected", pricing: { charged: payment.amount || PRICE_PER_BUNDLE, unit: "USDT" }
@@ -472,7 +409,6 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
     error(res, 500, 'Bundle processing failed', { message: err.message });
   }
 }
-
 /**
  * POST /api/v1/analyze - Analyze transactions for MEV potential
  */
@@ -480,16 +416,13 @@ async function handleAnalyze(req: http.IncomingMessage, res: http.ServerResponse
   try {
     const payment = checkX402Payment(req);
     if (!payment.paid) { x402PaymentRequired(res, PRICE_PER_ANALYSIS); return; }
-
     const body = await parseBody(req);
     const { transaction, address } = body;
-
     const slot = await connection.getSlot();
     const recentFees = await connection.getRecentPrioritizationFees().catch(() => []);
     const medianFee = recentFees.length > 0
       ? recentFees.map(f => f.prioritizationFee).sort((a, b) => a - b)[Math.floor(recentFees.length / 2)]
       : 5000;
-
     success(res, {
       slot,
       address: address || null,
@@ -501,12 +434,10 @@ async function handleAnalyze(req: http.IncomingMessage, res: http.ServerResponse
       // TODO: Full MEV simulation
       opportunities: []
     });
-
   } catch (err: any) {
     error(res, 500, 'Analysis failed', { message: err.message });
   }
 }
-
 /**
  * POST /api/v1/learn - Feed bundle outcome for Hebbian learning
  */
@@ -514,12 +445,10 @@ async function handleLearn(req: http.IncomingMessage, res: http.ServerResponse) 
   try {
     const body = await parseBody(req);
     const { bundleId, status, tipLamports, healthScore, skipRate, leaderQuality } = body;
-
     if (!bundleId || !status) {
       error(res, 400, 'Missing required fields: bundleId, status');
       return;
     }
-
     if (hebbianOptimizer) {
       await hebbianOptimizer.learn({
         tipLamports: tipLamports || 1000,
@@ -529,18 +458,15 @@ async function handleLearn(req: http.IncomingMessage, res: http.ServerResponse) 
         leaderQuality: leaderQuality || 0.7
       });
     }
-
     success(res, {
       message: 'Outcome recorded',
       learned: !!hebbianOptimizer,
       bundleId
     });
-
   } catch (err: any) {
     error(res, 500, 'Learning failed', { message: err.message });
   }
 }
-
 /**
  * GET /api/v1/insights - Hebbian learning insights
  */
@@ -548,7 +474,6 @@ async function handleInsights(res: http.ServerResponse) {
   const insights = hebbianOptimizer?.getInsights
     ? await hebbianOptimizer.getInsights()
     : [];
-
   success(res, {
     hebbianEnabled: !!hebbianOptimizer,
     totalPatternsLearned: insights.length,
@@ -559,7 +484,6 @@ async function handleInsights(res: http.ServerResponse) {
       : null
   });
 }
-
 /**
  * GET /api/v1/proof - Export cryptographic proof chain
  */
@@ -574,7 +498,6 @@ async function handleProof(req: http.IncomingMessage, res: http.ServerResponse) 
     stats: proofChain.getStats()
   });
 }
-
 /**
  * GET /api/v1/proof/verify - Verify proof chain integrity
  */
@@ -590,7 +513,6 @@ async function handleProofVerify(res: http.ServerResponse) {
     timestamp: new Date().toISOString()
   });
 }
-
 /**
  * GET /api/v1/proof/report - Markdown proof chain report
  */
@@ -602,7 +524,6 @@ async function handleProofReport(res: http.ServerResponse) {
   res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
   res.end(proofChain.generateMarkdownReport());
 }
-
 /**
  * GET /api/v1/graph - Knowledge graph export
  */
@@ -616,7 +537,6 @@ async function handleGraph(res: http.ServerResponse) {
     data: knowledgeGraph.export()
   });
 }
-
 /**
  * GET /api/v1/graph/insights - Pattern insights from knowledge graph
  */
@@ -631,7 +551,6 @@ async function handleGraphInsights(res: http.ServerResponse) {
     count: insights.length
   });
 }
-
 /**
  * GET /api/v1/health/network - Network health score (0-100)
  */
@@ -649,7 +568,6 @@ async function handleNetworkHealth(res: http.ServerResponse) {
     aiContext
   });
 }
-
 /**
  * GET /api/v1/fault - Get active fault injection status
  */
@@ -665,7 +583,6 @@ async function handleFaultStatus(res: http.ServerResponse) {
     stats: faultInjector.getStats()
   });
 }
-
 /**
  * POST /api/v1/fault - Inject test fault
  */
@@ -677,13 +594,11 @@ async function handleFaultInject(req: http.IncomingMessage, res: http.ServerResp
     }
     const body = await parseBody(req);
     const { type, parameters } = body;
-
     const validTypes: FaultType[] = ['blockhash_expiry', 'fee_too_low', 'compute_exceeded', 'network_congestion', 'leader_skip', 'balance_insufficient', 'simulation_failure'];
     if (!type || !validTypes.includes(type)) {
       error(res, 400, `Invalid fault type. Valid: ${validTypes.join(', ')}`);
       return;
     }
-
     switch (type as FaultType) {
       case 'blockhash_expiry':
         faultInjector.enableBlockhashExpiry(parameters?.delaySlots || 160);
@@ -701,7 +616,6 @@ async function handleFaultInject(req: http.IncomingMessage, res: http.ServerResp
         error(res, 501, `Fault type '${type}' not yet implemented via API`);
         return;
     }
-
     console.log(`[FAULT] API injected fault: ${type}`);
     success(res, {
       message: `Fault '${type}' injected`,
@@ -711,7 +625,6 @@ async function handleFaultInject(req: http.IncomingMessage, res: http.ServerResp
     error(res, 500, 'Fault injection failed', { message: err.message });
   }
 }
-
 /**
  * DELETE /api/v1/fault - Clear active faults
  */
@@ -723,7 +636,6 @@ async function handleFaultReset(req: http.IncomingMessage, res: http.ServerRespo
   faultInjector.reset();
   success(res, { message: 'All faults cleared' });
 }
-
 /**
  * POST /api/v1/chat - Chat with the Solana MEV Agent
  * DeepSeek-powered conversational AI with tool calling.
@@ -733,26 +645,19 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse) {
     error(res, 503, 'Chat agent not initialized. Set AI_API_KEY in environment.');
     return;
   }
-
   try {
     const body = await parseBody(req);
     const { message, sessionId } = body;
-
     if (!message || typeof message !== 'string') {
       error(res, 400, 'Missing or invalid "message" field');
       return;
     }
-
     const sid = sessionId || crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-
     console.log(`[CHAT] ${sid}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
-
     const startTime = Date.now();
     const result = await chatAgent.handleMessage(sid, message);
     const elapsed = Date.now() - startTime;
-
     console.log(`[CHAT] ${sid}: ${elapsed}ms, ${result.toolCalls?.length || 0} tool calls`);
-
     success(res, {
       sessionId: result.sessionId,
       response: result.response,
@@ -765,13 +670,11 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse) {
     error(res, 500, 'Chat processing failed', { message: e.message });
   }
 }
-
 /**
  * GET /api/v1/status - Agent status & capabilities
  */
 async function handleStatus(res: http.ServerResponse) {
   const uptime = Math.floor((Date.now() - serverStartTime) / 1000);
-
   success(res, {
     agentId: AGENT_ID,
     name: AGENT_NAME,
@@ -809,14 +712,12 @@ async function handleStatus(res: http.ServerResponse) {
     }
   });
 }
-
 /**
  * GET /api/v1/health - Lite health check
  */
 );
   res.end(CHAT_UI_HTML);
 }
-
 async function handleHealth(res: http.ServerResponse) {
   let rpcOk = false;
   let slot = 0;
@@ -824,7 +725,6 @@ async function handleHealth(res: http.ServerResponse) {
     slot = await connection.getSlot();
     rpcOk = true;
   } catch { rpcOk = false; }
-
   jsonResponse(res, rpcOk ? 200 : 503, {
     status: rpcOk ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
@@ -840,14 +740,12 @@ async function handleHealth(res: http.ServerResponse) {
     }
   });
 }
-
 /**
  * GET /api/v1/metrics - Performance metrics
  */
 async function handleMetrics(res: http.ServerResponse) {
   const oneHourAgo = Date.now() - 3600000;
   const recent = recentRequests.filter(r => r.timestamp > oneHourAgo);
-
   success(res, {
     agent: { id: AGENT_ID, name: AGENT_NAME, version: AGENT_VERSION },
     time: {
@@ -867,14 +765,11 @@ async function handleMetrics(res: http.ServerResponse) {
     }
   });
 }
-
 /**
  * GET /api/v1/brief - Morning market brief
  */
 let briefCache: { data: BriefData; timestamp: number } | null = null;
 const BRIEF_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-
 /**
  * GET /api/v1/stats - Comprehensive agent statistics dashboard
  */
@@ -883,7 +778,6 @@ async function handleStats(res: http.ServerResponse) {
   const oneDayAgo = Date.now() - 86400000;
   const hourlyRequests = recentRequests.filter(r => r.timestamp > oneHourAgo);
   const dailyRequests = recentRequests.filter(r => r.timestamp > oneDayAgo);
-
   const proofStats: any = proofChain?.getStats() || { chainLength: 0, integrityVerified: true };
   let hebbianPatterns = 0;
   let hebbianSuccessRate: number | null = null;
@@ -897,9 +791,7 @@ async function handleStats(res: http.ServerResponse) {
       }
     } catch {}
   }
-
   const webhookStats = webhookManager.getStats();
-
   let avgTip = 0;
   if (hebbianOptimizer && typeof hebbianOptimizer.getInsights === "function") {
     try {
@@ -908,12 +800,10 @@ async function handleStats(res: http.ServerResponse) {
       if (tips.length > 0) avgTip = Math.round(tips.reduce((a: number, b: number) => a + b, 0) / tips.length);
     } catch {}
   }
-
   let networkScore = 0;
   if (networkHealth) {
     try { networkScore = (await networkHealth.calculateHealth()).score; } catch {}
   }
-
   success(res, {
     agent: { id: AGENT_ID, name: AGENT_NAME, version: AGENT_VERSION },
     time: { uptime: formatUptime(Math.floor((Date.now() - serverStartTime) / 1000)), started: new Date(serverStartTime).toISOString() },
@@ -934,7 +824,6 @@ async function handleStats(res: http.ServerResponse) {
       tipOracle: true, webhooks: true, autoRetry: true },
   });
 }
-
 /**
  * GET /api/v1/webhooks - List pending webhook callbacks
  */
@@ -954,10 +843,8 @@ async function handleBrief(res: http.ServerResponse) {
       });
       return;
     }
-
     const brief = await buildBrief();
     briefCache = { data: brief, timestamp: Date.now() };
-
     jsonResponse(res, 200, {
       success: true,
       cached: false,
@@ -972,7 +859,6 @@ async function handleBrief(res: http.ServerResponse) {
     });
   }
 }
-
 // ===== Utility =====
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
@@ -986,7 +872,6 @@ function formatUptime(seconds: number): string {
   parts.push(`${s}s`);
   return parts.join(' ');
 }
-
 // ===== Router =====
 const routes: Record<string, Record<string, (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>>> = {
   GET: {
@@ -1040,7 +925,6 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
     '/api/v1/fault': handleFaultReset,
   }
 };
-
 // ===== Server =====
 const server = http.createServer(async (req, res) => {
   // CORS preflight
@@ -1054,11 +938,9 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
-
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const path = url.pathname.replace(/\/+$/, '') || '/';
-
     const methodHandlers = routes[req.method || 'GET'];
     if (methodHandlers) {
       const handler = methodHandlers[path];
@@ -1068,7 +950,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
-
     // Method-agnostic fallback: if the path exists under ANY method, accept the request
     if (!methodHandlers || !methodHandlers[path]) {
       for (const method of Object.keys(routes)) {
@@ -1084,7 +965,6 @@ const server = http.createServer(async (req, res) => {
         }
       }
     }
-
     // 404 for unmatched API routes
     if (path.startsWith('/api/')) {
       jsonResponse(res, 404, {
@@ -1120,12 +1000,10 @@ code{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-family:'Courier N
 <li><code>POST /api/v1/analyze</code> - MEV analysis</li>
 <li><code>GET /api/v1/proof</code> - Cryptographic proof chain</li>
 <li><code>GET /api/v1/health/network</code> - Network health score</li>
-
 </ul>
 <p>Powered by <strong>solana-tx-stack</strong> v${AGENT_VERSION} | Jito: ${jitoReady ? '✅ LIVE' : '❌ API-ONLY'} | AI: ${failureAgent ? '✅ DeepSeek' : '❌ N/A'} | Chat: ${chatAgent ? '✅ Live' : '❌ N/A'} | Proof: ${proofChain ? '✅ SHA-256' : '❌ N/A'}</p>
 </body></html>`);
     }
-
     logRequest(req, res.statusCode || 200);
   } catch (err: any) {
     console.error('[SERVER] Unhandled error:', err);
@@ -1133,7 +1011,6 @@ code{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-family:'Courier N
     logRequest(req, 500);
   }
 });
-
 // Initialize stack then start server
 initializeStack().then(() => {
   server.listen(PORT, () => {

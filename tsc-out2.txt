@@ -1,0 +1,2 @@
+src/a2mcp-server.ts(718,1): error TS1128: Declaration or statement expected.
+src/a2mcp-server.ts(720,1): error TS1128: Declaration or statement expected.
