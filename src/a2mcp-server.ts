@@ -18,6 +18,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import http from 'http';
+import * as crypto from 'crypto';
 import { URL } from 'url';
 import { Connection, Keypair, PublicKey, VersionedTransaction, Transaction, TransactionMessage } from '@solana/web3.js';
 import * as fs from 'fs';
@@ -37,6 +38,7 @@ import { NetworkHealthCalculator } from './network-health.js';
 import { FaultInjector, FaultType } from './fault-injector.js';
 import { getTipOracle, getMarketContext } from './tip-oracle.js';
 import { getWebhookManager } from './webhooks.js';
+import { ChatAgent, getChatAgent, ChatAgentConfig } from './chat-agent.js';
 
 // ===== Configuration =====
 const PORT = parseInt(process.env.PORT || '8080');
@@ -86,6 +88,7 @@ let proofChain: DecisionProofChain | null = null;
 let knowledgeGraph: TransactionKnowledgeGraph | null = null;
 let networkHealth: NetworkHealthCalculator | null = null;
 let faultInjector: FaultInjector | null = null;
+let chatAgent: ChatAgent | null = null;
 let jitoReady = false;
 
 async function initializeStack() {
@@ -146,7 +149,20 @@ async function initializeStack() {
     console.warn('[STACK] No AUTH_KEYPAIR_PATH set. Bundle submission disabled.');
   }
 
-  console.log(`[STACK] Ready - Jito: ${jitoReady ? 'LIVE' : 'API-ONLY'}`);
+  // Chat agent
+  if (process.env.AI_API_KEY && process.env.AI_API_KEY !== 'sk-you…here') {
+    const chatConfig: ChatAgentConfig = {
+      apiKey: process.env.AI_API_KEY,
+      model: process.env.AI_MODEL || 'deepseek-v4-flash',
+      timeoutMs: parseInt(process.env.AI_TIMEOUT_MS || '30000'),
+    };
+    chatAgent = getChatAgent(chatConfig, `http://localhost:${PORT}`);
+    console.log('[AGENT] Chat agent initialized — DeepSeek-powered conversational AI');
+  } else {
+    console.warn('[AGENT] Chat agent not initialized — AI_API_KEY not configured');
+  }
+
+  console.log(`[STACK] Ready - Jito: ${jitoReady ? 'LIVE' : 'API-ONLY'} | Chat: ${chatAgent ? 'LIVE' : 'OFF'}`);
 }
 
 // ===== State =====
@@ -709,6 +725,48 @@ async function handleFaultReset(req: http.IncomingMessage, res: http.ServerRespo
 }
 
 /**
+ * POST /api/v1/chat - Chat with the Solana MEV Agent
+ * DeepSeek-powered conversational AI with tool calling.
+ */
+async function handleChat(req: http.IncomingMessage, res: http.ServerResponse) {
+  if (!chatAgent) {
+    error(res, 503, 'Chat agent not initialized. Set AI_API_KEY in environment.');
+    return;
+  }
+
+  try {
+    const body = await parseBody(req);
+    const { message, sessionId } = body;
+
+    if (!message || typeof message !== 'string') {
+      error(res, 400, 'Missing or invalid "message" field');
+      return;
+    }
+
+    const sid = sessionId || crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+
+    console.log(`[CHAT] ${sid}: "${message.substring(0, 80)}${message.length > 80 ? '...' : ''}"`);
+
+    const startTime = Date.now();
+    const result = await chatAgent.handleMessage(sid, message);
+    const elapsed = Date.now() - startTime;
+
+    console.log(`[CHAT] ${sid}: ${elapsed}ms, ${result.toolCalls?.length || 0} tool calls`);
+
+    success(res, {
+      sessionId: result.sessionId,
+      response: result.response,
+      toolCalls: result.toolCalls || undefined,
+      elapsedMs: elapsed,
+      activeSessions: chatAgent.getSessionCount(),
+    });
+  } catch (e: any) {
+    console.error('[CHAT] Error:', e.message);
+    error(res, 500, 'Chat processing failed', { message: e.message });
+  }
+}
+
+/**
  * GET /api/v1/status - Agent status & capabilities
  */
 async function handleStatus(res: http.ServerResponse) {
@@ -962,6 +1020,7 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
           { path: 'POST /api/v1/bundle', description: 'Submit Jito bundle with DeepSeek AI analysis', pricing: `${PRICE_PER_BUNDLE} USDT` },
           { path: 'POST /api/v1/analyze', description: 'Analyze for MEV opportunities with DeepSeek AI', pricing: `${PRICE_PER_ANALYSIS} USDT` },
           { path: 'POST /api/v1/learn', description: 'Feed bundle outcome for Hebbian learning' },
+          { path: 'POST /api/v1/chat', description: 'Chat with the Solana MEV Agent (DeepSeek-powered AI)', pricing: 'Free' },
         ]
       });
     },
@@ -970,6 +1029,7 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
     '/api/v1/bundle': handleBundleSubmit,
     '/api/v1/analyze': handleAnalyze,
     '/api/v1/learn': handleLearn,
+    '/api/v1/chat': handleChat,
     '/api/v1/fault': handleFaultInject,
   },
   DELETE: {
@@ -1058,7 +1118,7 @@ code{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-family:'Courier N
 <li><code>GET /api/v1/health/network</code> - Network health score</li>
 
 </ul>
-<p>Powered by <strong>solana-tx-stack</strong> v${AGENT_VERSION} | Jito: ${jitoReady ? '✅ LIVE' : '❌ API-ONLY'} | AI: ${failureAgent ? '✅ DeepSeek' : '❌ N/A'} | Proof: ${proofChain ? '✅ SHA-256' : '❌ N/A'}</p>
+<p>Powered by <strong>solana-tx-stack</strong> v${AGENT_VERSION} | Jito: ${jitoReady ? '✅ LIVE' : '❌ API-ONLY'} | AI: ${failureAgent ? '✅ DeepSeek' : '❌ N/A'} | Chat: ${chatAgent ? '✅ Live' : '❌ N/A'} | Proof: ${proofChain ? '✅ SHA-256' : '❌ N/A'}</p>
 </body></html>`);
     }
 
@@ -1081,6 +1141,7 @@ initializeStack().then(() => {
 ║  Jito:    ${(jitoReady ? '✅ LIVE' : '❌ API-ONLY').padEnd(37)}║
 ║  Hebbian: ${'✅ ON'.padEnd(37)}║
 ║  AI:      ${(failureAgent ? '✅ DeepSeek' : '❌ N/A').padEnd(37)}║
+║  Chat:    ${(chatAgent ? '✅ Live' : '❌ N/A').padEnd(37)}║
 ║  Proof:   ${(proofChain ? '✅ SHA-256' : '❌ N/A').padEnd(37)}║
 ║  Graph:   ${(knowledgeGraph ? '✅ Semantic' : '❌ N/A').padEnd(37)}║
 ║  Health:  ${(networkHealth ? '✅ Monitor' : '❌ N/A').padEnd(37)}║
