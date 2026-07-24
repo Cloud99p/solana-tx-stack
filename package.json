@@ -6,11 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-<<<<<<< HEAD
     "build": "echo skip build",
-=======
-    "build": "echo skipped",
->>>>>>> e2166ca (fix: clean tsc build — CHAT_UI_HTML remnants fully removed)
     "start": "tsx src/a2mcp-server.ts",
     "okx-agent": "node okx-agent-server.js",
     "a2mcp": "tsx src/a2mcp-server.ts",
