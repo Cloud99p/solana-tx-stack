@@ -1,0 +1,51 @@
+const https = require('https');
+
+function rpcCall(method, params) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method, params });
+    const req = https.request({
+      hostname: 'api.mainnet-beta.solana.com',
+      port: 443,
+      path: '/',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d)); } catch { resolve(d); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function main() {
+  const sig = '15e0489327d18a142be9ad62cfa95d9dedc694e7cdff719e36cfd799da320875';
+
+  // Check the signature
+  const tx = await rpcCall('getTransaction', [sig, { encoding: 'json', maxSupportedTransactionVersion: 0 }]);
+  console.log('\n=== Transaction Status ===');
+  if (tx.result) {
+    console.log('✅ LANDED in slot ' + tx.result.slot);
+    console.log('Block time: ' + new Date((tx.result.blockTime || 0) * 1000).toISOString());
+    console.log('Confirmations: ' + (tx.result.confirmations !== null ? tx.result.confirmations : 'finalized'));
+    console.log('Fee: ' + (tx.result.meta?.fee || 0) + ' lamports');
+    console.log('Status: ' + (tx.result.meta?.err ? '❌ Failed: ' + JSON.stringify(tx.result.meta.err) : '✅ Success'));
+  } else if (tx.error) {
+    console.log('❌ Not found: ' + tx.error.message);
+    // Check if it's a pending bundle — check recent signatures
+    const wallet = '8ifrorg6DFECBXFA6fikQ5YkZAhihcqCi72A9shiuuxU';
+    const sigs = await rpcCall('getSignaturesForAddress', [wallet, { limit: 5 }]);
+    console.log('\n=== Recent txns for wallet ===');
+    if (sigs.result) {
+      for (const s of sigs.result) {
+        console.log('  ' + s.signature + ' — slot ' + s.slot + ' — ' + (s.err ? '❌' : '✅') + ' — ' + new Date((s.blockTime || 0) * 1000).toISOString());
+      }
+    }
+  }
+}
+
+main().catch(e => console.error(e));
