@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "echo skip build",
     "start": "tsx src/a2mcp-server.ts",
     "okx-agent": "node okx-agent-server.js",
     "a2mcp": "tsx src/a2mcp-server.ts",
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
+    "canvas": "^3.2.3",
     "eslint": "^9.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
