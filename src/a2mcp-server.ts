@@ -671,6 +671,43 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 }
 /**
+ * POST /api/v1/okx-command - Execute an onchainos CLI command
+ */
+async function handleOkxCommand(req: http.IncomingMessage, res: http.ServerResponse) {
+  try {
+    const body = await parseBody(req);
+    const { command, args, timeout } = body;
+    if (!command || typeof command !== 'string') {
+      error(res, 400, 'Missing or invalid "command" field');
+      return;
+    }
+    const { execSync } = require('child_process');
+    const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+    const fullCmd = `${onchainosPath} ${command} ${args || ''}`;
+    const cmdTimeout = timeout || 30000;
+    console.log(`[OKX-CMD] Executing: ${fullCmd.substring(0, 200)}`);
+    try {
+      const stdout = execSync(fullCmd, { timeout: cmdTimeout, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+      console.log(`[OKX-CMD] Success (${stdout.length} chars)`);
+      success(res, { success: true, command: fullCmd, stdout });
+    } catch (execErr: any) {
+      const stderr = execErr.stderr ? execErr.stderr.toString() : '';
+      const partialStdout = execErr.stdout ? execErr.stdout.toString() : '';
+      console.error(`[OKX-CMD] Failed: ${execErr.message.substring(0, 200)}`);
+      jsonResponse(res, 200, {
+        success: false,
+        command: fullCmd,
+        error: stderr || execErr.message,
+        partialStdout,
+        exitCode: execErr.status ?? 1,
+      });
+    }
+  } catch (err: any) {
+    error(res, 500, 'OKX command execution failed', { message: err.message });
+  }
+}
+
+/**
  * GET /api/v1/status - Agent status & capabilities
  */
 async function handleStatus(res: http.ServerResponse) {
@@ -907,6 +944,7 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
           { path: 'POST /api/v1/analyze', description: 'Analyze for MEV opportunities with DeepSeek AI', pricing: `${PRICE_PER_ANALYSIS} USDT` },
           { path: 'POST /api/v1/learn', description: 'Feed bundle outcome for Hebbian learning' },
           { path: 'POST /api/v1/chat', description: 'Chat with the Solana MEV Agent (DeepSeek-powered AI)', pricing: 'Free' },
+          { path: 'POST /api/v1/okx-command', description: 'Execute onchainos CLI commands (agent, task, wallet, identity)', pricing: 'Free' },
         ]
       });
     },
@@ -917,6 +955,7 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
     '/api/v1/learn': handleLearn,
     '/api/v1/chat': handleChat,
     '/api/v1/fault': handleFaultInject,
+    '/api/v1/okx-command': handleOkxCommand,
   },
   DELETE: {
     '/api/v1/fault': handleFaultReset,
@@ -972,7 +1011,7 @@ const server = http.createServer(async (req, res) => {
           'GET /api/v1/proof', 'GET /api/v1/proof/verify', 'GET /api/v1/proof/report',
           'GET /api/v1/graph', 'GET /api/v1/graph/insights',
           'GET /api/v1/health/network', 'GET /api/v1/stats', 'GET /api/v1/webhooks',
-          'POST /api/v1/bundle', 'POST /api/v1/analyze', 'POST /api/v1/learn',
+          'POST /api/v1/bundle', 'POST /api/v1/analyze', 'POST /api/v1/learn', 'POST /api/v1/okx-command',
           'DELETE /api/v1/fault'
         ]
       });

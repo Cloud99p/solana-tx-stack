@@ -173,6 +173,28 @@ const AGENT_TOOLS: ToolDefinition[] = [
       },
       required: ['action', 'taskId']
     }
+  },
+  {
+    name: 'run_okx_command',
+    description: 'Execute an onchainos CLI command for OKX.AI operations. Supports all onchainos subcommands: agent, task, wallet, identity, payment, etc. Use this for any OKX.AI marketplace interaction.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description: 'Full onchainos CLI command to execute (e.g., "agent get-my-agents", "task list", "wallet balance")'
+        },
+        args: {
+          type: 'string',
+          description: 'Additional CLI arguments and flags (e.g., "--base-url https://okx.ai --agent-id 4195")'
+        },
+        timeout: {
+          type: 'number',
+          description: 'Command timeout in milliseconds (default: 30000)'
+        }
+      },
+      required: ['command']
+    }
   }
 ];
 
@@ -195,6 +217,7 @@ You have access to these tools — use them to help users:
 5. \`get_market_brief\` — Crypto market snapshot (BTC, ETH, SOL, Fear & Greed)
 6. \`analyze_transaction\` — DeepSeek-powered MEV opportunity analysis
 7. \`track_task\` — Log tasks to the ASP tracking system (tasks.json)
+8. \`run_okx_command\` — Execute onchainos CLI commands on this server. Use for: registering/updating your ASP listing, checking tasks, managing identity, wallet operations, and any OKX.AI marketplace interaction.
 
 **ASP Task Lifecycle — You Manage These Stages:**
 1. NEW TASK → Greet user, explain service, ask for required info (signed tx in base64, tip preference)
@@ -481,6 +504,26 @@ export class ChatAgent {
             tx: params.transaction,
           });
           return { tool: name, success: result.success || false, result };
+        }
+
+        case 'run_okx_command': {
+          const { execSync } = require('child_process');
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          const fullCmd = `${onchainosPath} ${params.command} ${params.args || ''}`;
+          const timeout = params.timeout || 30000;
+          try {
+            const stdout = execSync(fullCmd, { timeout, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+            return { tool: name, success: true, result: { stdout, command: fullCmd } };
+          } catch (execErr: any) {
+            const stderr = execErr.stderr ? execErr.stderr.toString() : execErr.message;
+            const partialStdout = execErr.stdout ? execErr.stdout.toString() : '';
+            return {
+              tool: name,
+              success: false,
+              result: { stderr, partialStdout, command: fullCmd },
+              error: stderr,
+            };
+          }
         }
 
         case 'track_task': {
