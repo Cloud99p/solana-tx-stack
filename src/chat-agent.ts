@@ -13,6 +13,7 @@
 import https from 'https';
 import http from 'http';
 import * as crypto from 'crypto';
+import { execSync } from 'child_process';
 
 // ===== Tool Definitions (what the agent can do) =====
 
@@ -507,7 +508,6 @@ export class ChatAgent {
         }
 
         case 'run_okx_command': {
-          const { execSync } = require('child_process');
           const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
           const fullCmd = `${onchainosPath} ${params.command} ${params.args || ''}`;
           const timeout = params.timeout || 30000;

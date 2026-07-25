@@ -21,6 +21,7 @@ import { URL } from 'url';
 import { Connection, Keypair, PublicKey, VersionedTransaction, Transaction, TransactionMessage } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 // ===== Stack Imports =====
 import { JitoManager } from './jito-manager.js';
 import { HebbianTipOptimizer } from './hebbian-optimizer.js';
@@ -681,7 +682,6 @@ async function handleOkxCommand(req: http.IncomingMessage, res: http.ServerRespo
       error(res, 400, 'Missing or invalid "command" field');
       return;
     }
-    const { execSync } = require('child_process');
     const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
     const fullCmd = `${onchainosPath} ${command} ${args || ''}`;
     const cmdTimeout = timeout || 30000;
