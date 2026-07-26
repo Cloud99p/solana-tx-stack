@@ -59,25 +59,8 @@ export interface ChatAgentConfig {
 /**
  * Execute an onchainOS CLI command and return the JSON output.
  */
-function execOnchainOs(args: string[]): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const cp = require('child_process');
-    const bin = process.env.ONCHAINOS_PATH || 'onchainos';
-    cp.execFile(bin, args, { maxBuffer: 10 * 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
-      if (err) {
-        try { resolve(JSON.parse(stderr)); }
-        catch { resolve({ error: err.message, stdout: stdout.substring(0, 1000), stderr: stderr.substring(0, 500) }); }
-        return;
-      }
-      try { resolve(JSON.parse(stdout)); }
-      catch {
-        // Maybe it's plain text output, return as raw
-        const lines = stdout.trim().split('\n').filter((l: string) => l.trim());
-        resolve({ raw: lines.length <= 2 ? stdout.substring(0, 2000) : lines });
-      }
-    });
-  });
-}
+// execOnchainOs is defined as a private method inside the ChatAgent class (below)
+// because this is an ES Module project ("type": "module") and require() is not available at the top level.
 
 const AGENT_TOOLS: ToolDefinition[] = [
   {
@@ -731,6 +714,28 @@ export class ChatAgent {
   }
 
   /**
+   * Execute an onchainOS CLI command using dynamic import (ESM-compatible).
+   */
+  private async execOnchainOs(args: string[]): Promise<any> {
+    const { execFile } = await import('child_process');
+    const bin = process.env.ONCHAINOS_PATH || 'onchainos';
+    return new Promise((resolve) => {
+      execFile(bin, args, { maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' }, (err: any | null, stdout: string, stderr: string) => {
+        if (err) {
+          try { resolve(JSON.parse(stderr)); }
+          catch { resolve({ error: err.message, stdout: stdout.substring(0, 1000), stderr: stderr.substring(0, 500) }); }
+          return;
+        }
+        try { resolve(JSON.parse(stdout)); }
+        catch {
+          const lines = stdout.trim().split('\n').filter((l: string) => l.trim());
+          resolve({ raw: lines.length <= 2 ? stdout.substring(0, 2000) : lines });
+        }
+      });
+    });
+  }
+
+  /**
    * Execute a tool by calling the local server endpoints.
    */
   private async executeTool(name: string, args: string | Record<string, any>): Promise<ToolResult> {
@@ -793,7 +798,7 @@ export class ChatAgent {
           const cmdBuilder = ONCHAINOS_COMMANDS[name];
           if (cmdBuilder) {
             const args = cmdBuilder(params);
-            const result = await execOnchainOs(args);
+            const result = await this.execOnchainOs(args);
             return {
               tool: name,
               success: !result.error,
