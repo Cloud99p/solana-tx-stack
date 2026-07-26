@@ -56,6 +56,29 @@ export interface ChatAgentConfig {
 
 // ===== Tools available to the agent =====
 
+/**
+ * Execute an onchainOS CLI command and return the JSON output.
+ */
+function execOnchainOs(args: string[]): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const cp = require('child_process');
+    const bin = process.env.ONCHAINOS_PATH || 'onchainos';
+    cp.execFile(bin, args, { maxBuffer: 10 * 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
+      if (err) {
+        try { resolve(JSON.parse(stderr)); }
+        catch { resolve({ error: err.message, stdout: stdout.substring(0, 1000), stderr: stderr.substring(0, 500) }); }
+        return;
+      }
+      try { resolve(JSON.parse(stdout)); }
+      catch {
+        // Maybe it's plain text output, return as raw
+        const lines = stdout.trim().split('\n').filter((l: string) => l.trim());
+        resolve({ raw: lines.length <= 2 ? stdout.substring(0, 2000) : lines });
+      }
+    });
+  });
+}
+
 const AGENT_TOOLS: ToolDefinition[] = [
   {
     name: 'submit_bundle',
@@ -175,30 +198,247 @@ const AGENT_TOOLS: ToolDefinition[] = [
       required: ['action', 'taskId']
     }
   },
+  // ===== OnchainOS CLI Tools =====
+  // The agent has direct access to the `onchainos` CLI, logged into Cloud's OKX account.
+  // These tools expose the full CLI capability as individual function calls.
+
   {
-    name: 'run_onchainos',
-    description: 'Execute an onchainos CLI command. The onchainos binary is installed at /usr/local/bin/onchainos on this server. You describe what you want in PLAIN ENGLISH and the tool helps build the right command. Use this for ALL OKX.AI marketplace operations: checking/publishing your ASP listing, managing services, handling tasks, wallet operations, identity, etc.',
+    name: 'onchainos_agent_list',
+    description: 'List your own agents on the OnchainOS marketplace. Returns all agents under your account with their status, approval state, IDs, and wallet.',
+    parameters: { type: 'object', properties: { role: { type: 'string', enum: ['asp', 'user', 'evaluator'], description: 'Optional role filter' } } }
+  },
+  {
+    name: 'onchainos_agent_create',
+    description: 'Create a new AI agent on OnchainOS. Can create Agent Service Providers (ASP), User agents, or Evaluators. You set the name, role, description, chain, and services JSON.',
     parameters: {
       type: 'object',
       properties: {
-        action: {
-          type: 'string',
-          description: 'What you want to do in simple terms: "check my agent status", "list my services", "add an A2MCP service", "check pending decisions", "accept task 123", "deliver task 123 with tx abc", "wallet balance", "check identity", "send heartbeat", or any other onchainos operation you need.'
-        },
-        subcommand: {
-          type: 'string',
-          enum: ['agent', 'task', 'wallet', 'identity', 'help'],
-          description: 'The onchainos subcommand group. Let the tool infer from your action if unsure.'
-        },
-        args: {
-          type: 'string',
-          description: 'Optional. If you know the exact onchainos CLI args, provide them here as a string. Otherwise leave blank and the tool will use --help to discover the right syntax.'
-        }
+        name: { type: 'string', description: 'Agent name' },
+        role: { type: 'string', enum: ['asp', 'user', 'evaluator'], description: 'Agent role' },
+        description: { type: 'string', description: 'Agent description / bio' },
+        chain: { type: 'string', description: 'Blockchain (e.g. xlayer, solana)' },
+        services: { type: 'string', description: 'JSON string of services. E.g. [{ "type": "a2mcp", "endpoint": "https://...", "name": "...", "fee": "0 USDT", "description": "..." }]' }
       },
-      required: ['action']
+      required: ['name', 'role', 'description', 'chain']
     }
+  },
+  {
+    name: 'onchainos_agent_update',
+    description: 'Update an existing agent\'s identity, services, status, or pricing on OnchainOS.',
+    parameters: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent ID to update' },
+        name: { type: 'string', description: 'New name' },
+        description: { type: 'string', description: 'New description' },
+        services: { type: 'string', description: 'JSON string of updated services array' },
+        status: { type: 'string', description: 'New status' },
+        activate: { type: 'boolean', description: 'Re-submit for approval / activate' }
+      },
+      required: ['agentId']
+    }
+  },
+  {
+    name: 'onchainos_agent_search',
+    description: 'Search the public agent marketplace by query. Find agents by name, keyword, or description.',
+    parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] }
+  },
+  {
+    name: 'onchainos_agent_profile',
+    description: 'Get any agent\'s full profile by agent ID. Shows name, description, services, wallet, status.',
+    parameters: { type: 'object', properties: { agentId: { type: 'string' } }, required: ['agentId'] }
+  },
+  {
+    name: 'onchainos_agent_service_list',
+    description: 'List all services offered by an agent. Returns service names, types (A2A/A2MCP), endpoints, and prices.',
+    parameters: { type: 'object', properties: { agentId: { type: 'string' } }, required: ['agentId'] }
+  },
+  {
+    name: 'onchainos_wallet_balance',
+    description: 'Check wallet balances across all chains (XLayer, EVM, Solana). Returns token balances for the logged-in wallet.',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_wallet_status',
+    description: 'Show current wallet login status, active account info, and chain configuration.',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_wallet_addresses',
+    description: 'Show all wallet addresses grouped by chain category (XLayer, EVM, Solana).',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_market_price',
+    description: 'Get current price for a token by contract address. Returns price in USD, 24h change, market cap, volume.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, address: { type: 'string' } }, required: ['chain', 'address'] }
+  },
+  {
+    name: 'onchainos_token_search',
+    description: 'Search for tokens by name, symbol, or contract address. Returns token info including decimals, logo, contract details.',
+    parameters: { type: 'object', properties: { query: { type: 'string' }, chain: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] }
+  },
+  {
+    name: 'onchainos_token_report',
+    description: 'Full token due diligence report: token info + price + security scan + holder data in one shot.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, address: { type: 'string' } }, required: ['chain', 'address'] }
+  },
+  {
+    name: 'onchainos_token_hot',
+    description: 'Get hot/trending tokens ranked by social activity or trending score. Max 100 results.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, limit: { type: 'number' } } }
+  },
+  {
+    name: 'onchainos_swap_execute',
+    description: 'Execute a one-shot DEX swap: quote → approve (if needed) → swap → sign & broadcast → txHash.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, fromToken: { type: 'string' }, toToken: { type: 'string' }, amount: { type: 'string' }, slippage: { type: 'number' } }, required: ['chain', 'fromToken', 'toToken', 'amount'] }
+  },
+  {
+    name: 'onchainos_security_token_scan',
+    description: 'Batch token security scan — detect honeypots, high tax, mint risks, and other scam indicators.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, tokens: { type: 'string' } }, required: ['chain', 'tokens'] }
+  },
+  {
+    name: 'onchainos_security_dapp_scan',
+    description: 'Scan a URL/dApp for security risks — detect phishing sites, blacklisted domains.',
+    parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] }
+  },
+  {
+    name: 'onchainos_portfolio_total',
+    description: 'Get total portfolio value for any wallet address across all supported chains.',
+    parameters: { type: 'object', properties: { address: { type: 'string' }, chains: { type: 'string' } }, required: ['address'] }
+  },
+  {
+    name: 'onchainos_signal_list',
+    description: 'Get latest smart money / whale / KOL signal activity. Tracks big on-chain moves.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, limit: { type: 'number' } } }
+  },
+  {
+    name: 'onchainos_social_news',
+    description: 'Get latest crypto news feed from across the web. Filterable by coin symbol.',
+    parameters: { type: 'object', properties: { symbol: { type: 'string' }, limit: { type: 'number' } } }
+  },
+  {
+    name: 'onchainos_social_sentiment',
+    description: 'Get social sentiment metrics for one or more coins — mention count, sentiment score, trending rank.',
+    parameters: { type: 'object', properties: { symbols: { type: 'string' } }, required: ['symbols'] }
+  },
+  {
+    name: 'onchainos_memepump_tokens',
+    description: 'Scan meme tokens / pump.fun tokens on supported chains. Returns tokens with safety metrics, holder data, dev info.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, limit: { type: 'number' } } }
+  },
+  {
+    name: 'onchainos_gateway_gas',
+    description: 'Get current gas prices for an EVM chain. Returns gas price in gwei and estimated costs.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' } }, required: ['chain'] }
+  },
+  {
+    name: 'onchainos_strategy_limit_orders',
+    description: 'List open limit orders for the active Agentic Wallet account.',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_strategy_create_limit',
+    description: 'Place a price-triggered limit order using the Agentic Wallet.',
+    parameters: { type: 'object', properties: { chain: { type: 'string' }, baseToken: { type: 'string' }, quoteToken: { type: 'string' }, side: { type: 'string', enum: ['buy', 'sell'] }, price: { type: 'string' }, amount: { type: 'string' } }, required: ['chain', 'baseToken', 'quoteToken', 'side', 'price', 'amount'] }
+  },
+  {
+    name: 'onchainos_competition_list',
+    description: 'List active trading competitions available on Agentic Wallet. Shows prize pools, rules, timelines.',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_competition_rank',
+    description: 'Check your ranking in a trading competition. Shows leaderboard and your position.',
+    parameters: { type: 'object', properties: { activityId: { type: 'string' } }, required: ['activityId'] }
+  },
+  {
+    name: 'onchainos_workflow_token_research',
+    description: 'Full token due diligence workflow — combines price, security, holders, on-chain signals in one call.',
+    parameters: { type: 'object', properties: { address: { type: 'string' }, chain: { type: 'string' } } }
+  },
+  {
+    name: 'onchainos_workflow_smart_money',
+    description: 'Aggregate smart money signals by token with per-token DD. Find what smart wallets are buying.',
+    parameters: { type: 'object', properties: { limit: { type: 'number' } } }
+  },
+  {
+    name: 'onchainos_workflow_wallet_analysis',
+    description: 'Analyze a wallet\'s 7d/30d performance, trading behavior, and recent on-chain activity.',
+    parameters: { type: 'object', properties: { address: { type: 'string' }, chain: { type: 'string' } }, required: ['address'] }
+  },
+  {
+    name: 'onchainos_cross_chain_quote',
+    description: 'Get a cross-chain bridge quote. Find the best route to move tokens between chains.',
+    parameters: { type: 'object', properties: { fromChain: { type: 'string' }, toChain: { type: 'string' }, fromToken: { type: 'string' }, amount: { type: 'string' } }, required: ['fromChain', 'toChain', 'fromToken', 'amount'] }
+  },
+  {
+    name: 'onchainos_agent_tasks',
+    description: 'List all active tasks for agents under your account — shows task status, pricing, counterparty, role.',
+    parameters: { type: 'object', properties: { includeTerminal: { type: 'boolean', description: 'Include completed/failed tasks' } } }
+  },
+  {
+    name: 'onchainos_agent_jobs',
+    description: 'Find/recommend public tasks on the marketplace matching your agents\' skills. Start accepting jobs as a provider.',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'onchainos_mcp',
+    description: 'Start the onchainOS CLI as an MCP server (Model Context Protocol). Makes all capabilities available as MCP tools via JSON-RPC 2.0 over stdio.',
+    parameters: { type: 'object', properties: {} }
   }
 ];
+
+/**
+ * Map of onchainOS command builders — each tool name maps to the CLI args it needs.
+ */
+const ONCHAINOS_COMMANDS: Record<string, (p: Record<string, any>) => string[]> = {
+  onchainos_agent_list: (p) => ['agent', 'get-my-agents', ...(p.role ? ['--role', p.role] : [])],
+  onchainos_agent_create: (p) => {
+    const args = ['agent', 'create', '--name', p.name, '--role', p.role, '--description', p.description, '--chain', p.chain || 'xlayer'];
+    if (p.services) args.push('--service', p.services);
+    return args;
+  },
+  onchainos_agent_update: (p) => {
+    const args = ['agent', 'update', '--agent-id', p.agentId];
+    if (p.name) args.push('--name', p.name);
+    if (p.description) args.push('--description', p.description);
+    if (p.services) args.push('--service', p.services);
+    if (p.activate) args.push('--activate');
+    return args;
+  },
+  onchainos_agent_search: (p) => ['agent', 'search', '--query', p.query, ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_agent_profile: (p) => ['agent', 'profile', '--agent-id', p.agentId],
+  onchainos_agent_service_list: (p) => ['agent', 'service-list', '--agent-id', p.agentId],
+  onchainos_agent_tasks: (p) => ['agent', 'active-tasks', ...(p.includeTerminal ? ['--include-terminal'] : [])],
+  onchainos_agent_jobs: (p) => ['agent', 'find-jobs'],
+  onchainos_wallet_balance: () => ['wallet', 'balance'],
+  onchainos_wallet_status: () => ['wallet', 'status'],
+  onchainos_wallet_addresses: () => ['wallet', 'addresses'],
+  onchainos_market_price: (p) => ['market', 'price', '--chain', p.chain, '--address', p.address],
+  onchainos_token_search: (p) => ['token', 'search', '--query', p.query, ...(p.chain ? ['--chain', p.chain] : []), ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_token_report: (p) => ['token', 'report', '--chain', p.chain, '--address', p.address],
+  onchainos_token_hot: (p) => ['token', 'hot-tokens', ...(p.chain ? ['--chain', p.chain] : []), ...(p.limit ? ['--limit', String(Math.min(p.limit || 50, 100))] : [])],
+  onchainos_swap_execute: (p) => ['swap', 'execute', '--chain', p.chain, '--from-token', p.fromToken, '--to-token', p.toToken, '--amount', p.amount, ...(p.slippage ? ['--slippage', String(p.slippage)] : [])],
+  onchainos_security_token_scan: (p) => ['security', 'token-scan', '--chain', p.chain, '--tokens', p.tokens],
+  onchainos_security_dapp_scan: (p) => ['security', 'dapp-scan', '--url', p.url],
+  onchainos_portfolio_total: (p) => ['portfolio', 'total-value', '--address', p.address, ...(p.chains ? ['--chains', p.chains] : [])],
+  onchainos_signal_list: (p) => ['signal', 'list', ...(p.chain ? ['--chain', p.chain] : []), ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_social_news: (p) => ['social', 'news-latest', ...(p.symbol ? ['--symbol', p.symbol] : []), ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_social_sentiment: (p) => ['social', 'sentiment-symbol', '--symbols', p.symbols],
+  onchainos_memepump_tokens: (p) => ['memepump', 'tokens', ...(p.chain ? ['--chain', p.chain] : []), ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_gateway_gas: (p) => ['gateway', 'gas', '--chain', p.chain],
+  onchainos_strategy_limit_orders: () => ['strategy', 'list'],
+  onchainos_strategy_create_limit: (p) => ['strategy', 'create-limit', '--chain', p.chain, '--base-token', p.baseToken, '--quote-token', p.quoteToken, '--side', p.side, '--price', p.price, '--amount', p.amount],
+  onchainos_competition_list: () => ['competition', 'list'],
+  onchainos_competition_rank: (p) => ['competition', 'rank', '--activity-id', p.activityId],
+  onchainos_workflow_token_research: (p) => ['workflow', 'token-research', ...(p.address ? ['--address', p.address] : []), ...(p.chain ? ['--chain', p.chain] : [])],
+  onchainos_workflow_smart_money: (p) => ['workflow', 'smart-money', ...(p.limit ? ['--limit', String(p.limit)] : [])],
+  onchainos_workflow_wallet_analysis: (p) => ['workflow', 'wallet-analysis', '--address', p.address, ...(p.chain ? ['--chain', p.chain] : [])],
+  onchainos_cross_chain_quote: (p) => ['cross-chain', 'quote', '--from-chain', p.fromChain, '--to-chain', p.toChain, '--from-token', p.fromToken, '--amount', p.amount],
+  onchainos_mcp: () => ['mcp'],
+};
 
 const SYSTEM_PROMPT = `You are the Solana MEV Agent, an AI-powered MEV (Maximal Extractable Value) agent on the Solana blockchain. You have a personality — you're helpful, slightly witty, and deeply knowledgeable about Solana MEV infrastructure.
 
@@ -220,19 +460,52 @@ You have access to these tools:
 5. \`get_market_brief\` — Crypto market snapshot (BTC, ETH, SOL, Fear & Greed)
 6. \`analyze_transaction\` — DeepSeek-powered MEV opportunity analysis
 7. \`track_task\` — Log tasks to the ASP tracking system (tasks.json)
-8. \`run_onchainos\` — Execute the onchainos CLI to manage your OKX.AI marketplace identity. This is your gateway to ALL onchainos operations (agent management, services, tasks, wallet, identity, heartbeat).
+8. \`onchainos_agent_list\` — List all your agents
+9. \`onchainos_agent_create\` — Create new ASP/User/Evaluator agents
+10. \`onchainos_agent_update\` — Update agent identity, services, pricing
+11. \`onchainos_agent_search\` — Search the agent marketplace
+12. \`onchainos_agent_profile\` — Get any agent's full profile by ID
+13. \`onchainos_agent_service_list\` — List services offered by an agent
+14. \`onchainos_agent_tasks\` — List active/completed tasks for your agents
+15. \`onchainos_agent_jobs\` — Find public tasks to accept as a provider
+16. \`onchainos_wallet_balance\` — Check token balances across all chains
+17. \`onchainos_wallet_status\` — Show active account and login status
+18. \`onchainos_wallet_addresses\` — Show all wallet addresses per chain
+19. \`onchainos_market_price\` — Get current price by contract address
+20. \`onchainos_token_search\` — Search tokens by name/symbol/address
+21. \`onchainos_token_report\` — Full DD report (price + security + holders)
+22. \`onchainos_token_hot\` — Get hot/trending tokens
+23. \`onchainos_swap_execute\` — One-shot DEX swap (quote → approve → execute)
+24. \`onchainos_security_token_scan\` — Batch scan tokens for scams/honeypots
+25. \`onchainos_security_dapp_scan\` — Scan URLs for phishing/safety
+26. \`onchainos_portfolio_total\` — Get portfolio value for any wallet
+27. \`onchainos_signal_list\` — Smart money / whale / KOL activity
+28. \`onchainos_social_news\` — Latest crypto news feed
+29. \`onchainos_social_sentiment\` — Social sentiment metrics by coin
+30. \`onchainos_memepump_tokens\` — Scan meme tokens / pump.fun
+31. \`onchainos_gateway_gas\` — Check gas prices on any EVM chain
+32. \`onchainos_strategy_limit_orders\` — List your open limit orders
+33. \`onchainos_strategy_create_limit\` — Place a price-triggered limit order
+34. \`onchainos_competition_list\` — List active trading competitions
+35. \`onchainos_competition_rank\` — Check your competition ranking
+36. \`onchainos_workflow_token_research\` — Full token DD workflow
+37. \`onchainos_workflow_smart_money\` — Aggregate smart money signals
+38. \`onchainos_workflow_wallet_analysis\` — Analyze wallet performance
+39. \`onchainos_cross_chain_quote\` — Get cross-chain bridge quotes
+40. \`onchainos_mcp\` — Start onchainOS as MCP server
 
-**🔧 run_onchainos — How it works:**
-This tool runs the onchainos CLI installed on this server. You describe what you want in PLAIN ENGLISH and the tool helps route it. Examples:
-- "check my agent status" → runs \`onchainos agent get-agents --agent-ids 4195\`
-- "list my services" → runs \`onchainos agent service-list --agent-id 4195\`
-- "add an A2MCP service" → runs \`onchainos agent update --agent-id 4195 --service '...'\`
-- "check pending decisions" → runs \`onchainos agent pending-decisions-v2 request ...\`
-- "accept task 123 for 5 USDT" → runs \`onchainos task accept 123 --price 5\`
-- "wallet balance" → runs \`onchainos wallet balance\`
-- "send heartbeat" → runs \`onchainos agent heartbeat --chain-index 196 --chain xlayer\`
+**🔧 OnchainOS CLI — Direct Access:**
+Your server has the \`onchainos\` binary installed and logged into Cloud's OKX account (wallet: 0x18af...800c). Each onchainos_* tool above maps directly to a CLI command. These are REAL commands executing against your live account.
 
-The tool first checks the onchainos help to discover available subcommands if it doesn't know the exact syntax.
+- For agent listing/management: onchainos_agent_list, onchainos_agent_create, onchainos_agent_update
+- For wallet: onchainos_wallet_balance, onchainos_wallet_status
+- For tokens: onchainos_token_search, onchainos_token_report, onchainos_token_hot
+- For trading: onchainos_swap_execute, onchainos_strategy_create_limit
+- For security: onchainos_security_token_scan, onchainos_security_dapp_scan
+- For market intel: onchainos_signal_list, onchainos_social_news, onchainos_social_sentiment
+- For agents: onchainos_agent_tasks, onchainos_agent_jobs
+
+**IMPORTANT**: Be careful with write operations (swap, create agent, limit orders) — confirm with the user first. Read-only tools (search, balance, status, news, signal) are safe to use proactively.
 
 **IMPORTANT: Agent #4195 ALREADY EXISTS as an ASP on OKX.AI.**
 You do NOT need to create or register a new agent. If asked to "register an ASP", explain that #4195 already exists and you can add services to it.
@@ -515,110 +788,25 @@ export class ChatAgent {
           return { tool: name, success: result.success || false, result };
         }
 
-        case 'run_onchainos': {
-          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
-          const action = (params.action || '').toLowerCase();
-          const subcommand = params.subcommand || '';
-          const args = params.args || '';
-          const { exec } = await import('child_process');
-
-          // Helper: run a command and return result
-          const runCmd = async (cmd: string, timeoutMs = 30000): Promise<ToolResult> => {
-            try {
-              const stdout = await new Promise<string>((resolve, reject) => {
-                exec(cmd, { timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string, stderr: string) => {
-                  if (error) reject({ stderr, stdout, message: error.message });
-                  else resolve(stdout);
-                });
-              });
-              return { tool: name, success: true, result: { stdout, command: cmd } };
-            } catch (e: any) {
-              return { tool: name, success: false, result: { stderr: e.stderr || '', partialStdout: e.stdout || '' }, error: e.message || e.stderr || 'Command failed' };
-            }
-          };
-
-          // Parse the action to determine the command
-          try {
-            // Check if args were directly provided
-            if (args && subcommand) {
-              return await runCmd(`${onchainosPath} ${subcommand} ${args}`, 60000);
-            }
-
-            // Intent matching from plain English action
-            if (action.includes('agent') || action.includes('listing') || action.includes('service')) {
-              if (action.includes('service') || action.includes('list ') || subcommand === 'service-list') {
-                return await runCmd(`${onchainosPath} agent service-list --agent-id 4195`);
-              }
-              if (action.includes('status') || action.includes('info') || action.includes('profile') || action.includes('detail')) {
-                return await runCmd(`${onchainosPath} agent get-agents --agent-ids 4195`);
-              }
-              if (action.includes('add') || action.includes('create') || action.includes('register') || action.includes('new service') || action.includes('a2mcp')) {
-                // User wants to add a service — need more details. Return the help so DeepSeek can prompt user for service name, etc.
-                return await runCmd(`${onchainosPath} agent update --help`, 10000);
-              }
-              if (action.includes('heartbeat') || action.includes('online') || action.includes('ping')) {
-                return await runCmd(`${onchainosPath} agent heartbeat --chain-index 196 --chain xlayer`);
-              }
-              // Default: get full agent info
-              return await runCmd(`${onchainosPath} agent get-agents --agent-ids 4195`);
-            }
-
-            if (action.includes('task') || action.includes('job') || action.includes('pending') || action.includes('decision')) {
-              if (action.includes('accept') || action.includes('take')) {
-                // Extract task ID if mentioned
-                const idMatch = action.match(/task\s*(?:id)?\s*(\d+|\w+)/i);
-                const priceMatch = action.match(/price\s*(\d+(\.\d+)?)/i) || action.match(/for\s*(\d+(\.\d+)?)\s*usdt?/i);
-                const taskId = idMatch ? idMatch[1] : (subcommand || '').match(/\d+/)?.[0] || '';
-                const price = priceMatch ? priceMatch[1] : '0';
-                if (taskId) {
-                  return await runCmd(`${onchainosPath} task accept ${taskId} --price ${price}`);
-                }
-              }
-              if (action.includes('deliver') || action.includes('proof') || action.includes('submit')) {
-                const idMatch = action.match(/task\s*(?:id)?\s*(\d+|\w+)/i);
-                const hashMatch = action.match(/tx\s*(\w+)/i) || action.match(/proof\s*(\w+)/i) || action.match(/hash\s*(\w+)/i);
-                const taskId = idMatch ? idMatch[1] : '';
-                const proof = hashMatch ? hashMatch[1] : (args || '');
-                if (taskId) {
-                  return await runCmd(`${onchainosPath} task deliver-v2 ${taskId} --proof ${proof}`);
-                }
-              }
-              // Check pending decisions
-              return await runCmd(`${onchainosPath} agent pending-decisions-v2 request --job-id recent --role asp --agent-id 4195`);
-            }
-
-            if (action.includes('wallet') || action.includes('balance') || action.includes('funds')) {
-              if (action.includes('balance') || action.includes('fund')) {
-                return await runCmd(`${onchainosPath} wallet balance`);
-              }
-              if (action.includes('status') || action.includes('auth')) {
-                return await runCmd(`${onchainosPath} wallet status`);
-              }
-              return await runCmd(`${onchainosPath} wallet status`);
-            }
-
-            if (action.includes('identity') || action.includes('who am i') || action.includes('me')) {
-              return await runCmd(`${onchainosPath} identity me`);
-            }
-
-            if (action.includes('help') || action.includes('what can') || action.includes('commands')) {
-              return await runCmd(`${onchainosPath} --help`, 10000);
-            }
-
-            // Fallback: try to run the action as a direct onchainos command
-            if (subcommand) {
-              return await runCmd(`${onchainosPath} ${subcommand} ${args}`, 60000);
-            }
-
+        default: {
+          // Check if this is an onchainos command
+          const cmdBuilder = ONCHAINOS_COMMANDS[name];
+          if (cmdBuilder) {
+            const args = cmdBuilder(params);
+            const result = await execOnchainOs(args);
             return {
               tool: name,
-              success: false,
-              result: null,
-              error: `I couldn't understand "${action}". Try: "check my agent status", "list my services", "check pending tasks", "wallet balance", "add an A2MCP service with name...", or describe what you need.`,
+              success: !result.error,
+              result: result.error ? null : result,
+              error: result.error,
             };
-          } catch (e: any) {
-            return { tool: name, success: false, result: null, error: e.message };
           }
+          return {
+            tool: name,
+            success: false,
+            result: null,
+            error: `Unknown tool: ${name}`,
+          };
         }
 
         case 'track_task': {
@@ -679,13 +867,6 @@ export class ChatAgent {
           };
         }
 
-        default:
-          return {
-            tool: name,
-            success: false,
-            result: null,
-            error: `Unknown tool: ${name}`,
-          };
       }
     } catch (err: any) {
       return {
