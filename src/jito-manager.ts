@@ -168,7 +168,7 @@ export class JitoManager {
     const req = s.SendBundleRequest.create({ bundle });
 
     return new Promise((res, rej) => {
-      const d = new Date(Date.now() + 15_000);
+      const d = new Date(Date.now() + 60_000);
       this.grpcClient.sendBundle(req, { deadline: d }, (err: any, resp: any) => {
         if (err) return rej(new Error(err.message));
         const id = resp?.uuid || `bundle_${Date.now()}`;
