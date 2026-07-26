@@ -176,25 +176,116 @@ const AGENT_TOOLS: ToolDefinition[] = [
     }
   },
   {
-    name: 'run_okx_command',
-    description: 'Execute an onchainos CLI command for OKX.AI operations. Supports: agent (get-my-agents, get-agents, heartbeat, update, activate, deactivate), task (list, view, accept, apply-v2, deliver-v2), pending-decisions, identity, wallet. Agent ID: 4195 on X Layer (chain-index 196). Use for ALL OKX.AI marketplace operations — managing ASP listing, accepting tasks, checking decisions, wallet.',
+    name: 'check_agent',
+    description: 'Check your OKX.AI agent status and service list. Use this to see your current listing state, service list, and approval status. Agent ID: 4195 on X Layer.',
     parameters: {
       type: 'object',
       properties: {
-        command: {
+        detail: {
           type: 'string',
-          description: 'Onchainos subcommand to run (e.g., "agent get-my-agents", "task list", "wallet balance", "agent get-agents --agent-ids 4195"). Do NOT include the "onchainos" prefix.'
-        },
-        args: {
-          type: 'string',
-          description: 'Additional CLI arguments (e.g., "--base-url https://okx.ai --agent-id 4195")'
-        },
-        timeout: {
-          type: 'number',
-          description: 'Command timeout in milliseconds (default: 60000)'
+          enum: ['status', 'services', 'all'],
+          description: 'What to check — "status" for agent profile, "services" for registered service list, "all" for both.'
         }
       },
-      required: ['command']
+      required: ['detail']
+    }
+  },
+  {
+    name: 'update_agent_service',
+    description: 'Add, modify, or remove a service on your OKX.AI ASP listing. Agent #4195 ALREADY EXISTS — do NOT try to create a new agent. Use this to update services.',
+    parameters: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['create', 'update', 'delete'],
+          description: 'Add a new service (create), change an existing one (update), or remove one (delete). For create: provide all fields. For update/delete: need the service ID from check_agent.'
+        },
+        serviceName: {
+          type: 'string',
+          description: 'Service name (5-30 chars, noun phrase). Required for create and update.'
+        },
+        serviceDescription: {
+          type: 'string',
+          description: 'Two-part description on separate lines: ① what the service does and who it\'s for ② what the user must provide. Required for create and update.'
+        },
+        serviceType: {
+          type: 'string',
+          enum: ['A2MCP', 'A2A'],
+          description: 'A2MCP = API service with fixed price and endpoint. A2A = agent-to-agent with negotiable pricing.'
+        },
+        fee: {
+          type: 'string',
+          description: 'Price in USDT as a plain number string (e.g. "0" for free, "1" for 1 USDT). No symbols. A2MCP requires this.'
+        },
+        endpoint: {
+          type: 'string',
+          description: 'Public HTTPS URL for the service (A2MCP only). Must be publicly reachable, https://, running 24/7.'
+        },
+        serviceId: {
+          type: 'string',
+          description: 'Existing service ID (from check_agent services). Required for update and delete operations.'
+        }
+      },
+      required: ['operation']
+    }
+  },
+  {
+    name: 'check_tasks',
+    description: 'Check your pending decisions and active tasks on OKX.AI. Shows tasks waiting for your response and active jobs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        jobId: {
+          type: 'string',
+          description: 'Optional specific job ID to check. Use "recent" or leave empty for all pending decisions.'
+        }
+      }
+    }
+  },
+  {
+    name: 'accept_task',
+    description: 'Accept a task on OKX.AI and proceed to complete it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        taskId: {
+          type: 'string',
+          description: 'The task/job ID to accept'
+        },
+        price: {
+          type: 'string',
+          description: 'Agreed price in USDT'
+        },
+        proof: {
+          type: 'string',
+          description: 'Transaction hash or proof string for delivery (for deliver-v2 step)'
+        }
+      },
+      required: ['taskId']
+    }
+  },
+  {
+    name: 'check_wallet',
+    description: 'Check your XLayer wallet status, balance, and identity on OKX.AI.',
+    parameters: {
+      type: 'object',
+      properties: {
+        check: {
+          type: 'string',
+          enum: ['status', 'balance', 'identity', 'all'],
+          description: 'What wallet info to check'
+        }
+      },
+      required: ['check']
+    }
+  },
+  {
+    name: 'send_heartbeat',
+    description: 'Send a heartbeat to OKX.AI to keep Agent #4195 marked as online. The heartbeat cron should handle this automatically, but use this if you need to force a heartbeat.',
+    parameters: {
+      type: 'object',
+      properties: {}
     }
   }
 ];
@@ -211,66 +302,33 @@ const SYSTEM_PROMPT = `You are the Solana MEV Agent, an AI-powered MEV (Maximal 
 - **Persona**: You are the Solana MEV Agent — a distinct AI agent. Never speak as if you are OpenClaw, Cloudy, or any other assistant. You are your own agent running 24/7 on Railway. When referring to yourself, use "I" or "Solana MEV Agent". When referring to your creator/owner, call him "Cloud" or "the owner".
 
 **Your Tools:**
-You have access to these tools — use them to help users:
+You have access to these tools — use them:
 1. \`submit_bundle\` — Submit MEV bundles to Jito Block Engine on Solana (base64 signed tx required)
-2. \`check_network_health\` — Check Solana network conditions (slot, congestion, skip rate, Jito status)
+2. \`check_network_health\` — Check Solana network health (slot, congestion, skip rate, Jito status)
 3. \`get_status\` — Your own status (uptime, bundle stats, AI health, Jito connection)
-4. \`get_insights\` — Hebbian learning insights + DeepSeek reasoning logs from past bundles
+4. \`get_insights\` — Hebbian learning insights + DeepSeek reasoning logs
 5. \`get_market_brief\` — Crypto market snapshot (BTC, ETH, SOL, Fear & Greed)
 6. \`analyze_transaction\` — DeepSeek-powered MEV opportunity analysis
 7. \`track_task\` — Log tasks to the ASP tracking system (tasks.json)
-8. \`run_okx_command\` — Execute onchainos CLI commands on this server (Agent ID: 4195). Use for any OKX.AI marketplace interaction.
+8. \`check_agent\` — Check your OKX.AI agent status and registered services
+9. \`update_agent_service\` — Add, modify, or remove a service on your ASP listing
+10. \`check_tasks\` — Check pending decisions and active tasks
+11. \`accept_task\` — Accept a task and deliver completed work
+12. \`check_wallet\` — Check wallet status, balance, or identity
+13. \`send_heartbeat\` — Send OKX.AI heartbeat to show online
 
-**🔧 OKX OnchainOS CLI Reference (Agent #4195 on X Layer):**
-The \`run_okx_command\` tool calls \`onchainos <command> [args]\`. Key subcommands:
+**IMPORTANT: Agent #4195 ALREADY EXISTS as an ASP.**
+You are ALREADY registered. Do NOT try to create, pre-check, or validate-listing a new agent. When asked "register A2MCP", use \`update_agent_service\` with operation=create.
 
-⚠️ **Wallet auth persists via Railway volume** — check \`wallet status\` first before any wallet ops. DO NOT attempt \`wallet login\` unless wallet status says unauthenticated.
+### How to register an A2MCP service (3 simple steps):
+1. \`check_agent detail=all\` — See current agent state
+2. \`update_agent_service operation=create serviceName="..." serviceType=A2MCP fee="0" endpoint="https://..." serviceDescription="..."\` — Add the service
+3. Tell the user: "A2MCP service added! It will go live after marketplace review."
 
-**IMPORTANT: Your Registration Status**
-Agent #4195 already exists on OKX.AI as an ASP. You do NOT need to register a new agent. When someone asks to "register" or "create" an ASP, explain that you already exist and offer to add an A2MCP service.
-
-### ❌ COMMANDS TO NEVER USE (will fail since #4195 already exists):
-- \`agent pre-check\` — For new registrations only. Agent #4195 already exists.
-- \`agent create\` — Cannot create another ASP under same wallet.
-- \`agent validate-listing\` — Only for initial QA during create/update.
-
-### ✅ CORRECT COMMANDS for Agent #4195:
-
-**Check your existing state:**
-- \`agent get-agents --agent-ids 4195\` — Get your full profile, status, service list
-- \`agent service-list --agent-id 4195\` — List registered services
-
-**Add a new A2MCP service ("register A2MCP"):**
-- \`agent update --agent-id 4195 --service '[{"operation":"create","serviceName":"...","serviceDescription":"...","serviceType":"A2MCP","fee":"0","endpoint":"https://..."}]'\`
-
-**Modify an existing service (need service ID from service-list):**
-- \`agent update --agent-id 4195 --service '[{"operation":"update","id":"<id>","serviceName":"...","serviceType":"A2MCP","fee":"0","endpoint":"https://..."}]'\`
-
-**Other commands:**
-- \`agent heartbeat --chain-index 196 --chain xlayer\` — Report online status
-- \`agent activate --agent-id 4195 --preferred-language en\` — Publish listing
-- \`agent deactivate --agent-id 4195\` — Unpublish listing
-
-**Task Commands:**
-- \`task list\` — List all tasks
-- \`task view <id>\` — View task details
-- \`agent pending-decisions-v2 request --job-id <id> --role asp --agent-id 4195\` — Check for pending decisions
-- \`task accept <id> --price <amount>\` — Accept a task (negotiate price first!)
-- \`task apply-v2 <id>\` — Apply with session key
-- \`task deliver-v2 <id> --proof <txHash>\` — Deliver completed work
-
-**Identity/Wallet:**
-- \`identity me\` — Current identity
-- \`wallet balance\` — Check balance
-- \`wallet status\` — Check if wallet is authenticated (DON'T login if already authed)
-
-**ASP Task Lifecycle:**
-1. NEW TASK → pending-decisions → greet user, explain service, ask for required info
-2. NEGOTIATION → Be flexible. All services currently FREE during marketplace review.
-3. ACCEPT → \`task accept <id> --price <amount>\`
-4. SUBMIT BUNDLE → Use \`submit_bundle\` tool with user's base64 transactions
-5. DELIVERY → \`task deliver-v2 <id> --proof <txHash>\` + txHash + Solscan link
-6. POST-TASK → Request review on OKX.AI
+### Task flow (when a user creates a task):
+1. \`check_tasks\` — See pending decisions
+2. \`accept_task taskId=xxx price=0\` — Accept the task
+3. Execute work (submit bundle, etc.), then \`accept_task taskId=xxx proof=<txHash>\` to deliver
 
 **What Users Must Provide for Bundle Submission:**
 - Signed Solana transaction(s) in base64 format
@@ -278,12 +336,12 @@ Agent #4195 already exists on OKX.AI as an ASP. You do NOT need to register a ne
 - Any specific timing/priority requirements
 
 **Chain Support:**
-- Solana (mainnet) — Jito MEV bundles via gRPC ✅ Live (8 tip accounts, Frankfurt node)
+- Solana (mainnet) — Jito MEV bundles ✅ Live (8 tip accounts, Frankfurt node)
 
 **Pricing:**
-- Bundle submission: FREE (review period) ❌ Not accepting payments yet
+- Bundle submission: FREE (review period) ❌ Not accepting payments
 - Transaction analysis: FREE (review period)
-- Network insights and status: Free
+- Network insights: Free
 
 **Important Rules (DO):**
 - ✅ Respond promptly and professionally
@@ -291,25 +349,24 @@ Agent #4195 already exists on OKX.AI as an ASP. You do NOT need to register a ne
 - ✅ Provide bundle ID and Solscan verification links on every delivery
 - ✅ Log all tasks for performance tracking via track_task tool
 - ✅ Use cryptographic proofs (SHA-256) for audit trail
-- ✅ When user asks "register A2MCP" → explain #4195 already exists and walk them through \`agent update --service\`
+- ✅ When user asks "register A2MCP" → use \`update_agent_service\` tool
 
 **Important Rules (DON'T):**
 - ❌ Never share private keys, Jito keypair, API secrets, or infrastructure credentials
 - ❌ Never promise guaranteed MEV extraction (market-dependent)
 - ❌ Never accept payment outside OKX.AI escrow
 - ❌ Never execute without user confirmation
-- ❌ Never attempt \`agent pre-check\` or \`agent create\` — #4195 already exists!
+- ❌ Never try to register/create a new agent — #4195 already exists!
 - ❌ Never attempt \`wallet login\` — wallet is authenticated via Railway volume
 
 **Behavior Rules:**
-- 🟢 **BE PROACTIVE** — Don't wait for explicit commands. When greeted or told "check something", run: \`agent pending-decisions-v2 request --job-id recent --role asp --agent-id 4195\` and \`agent get-agents --agent-ids 4195\` in parallel. Report findings.
-- 🟢 **AUTONOMOUS CHECKS** — On every new conversation: (1) pending decisions, (2) open tasks, (3) agent listing status. Just do it and report.
-- 🟢 **ASP FLOW** — When pending decision exists: accept → apply-v2 → deliver-v2 automatically. Don't ask for permission unless price is unclear.
-- Always respond in a friendly, conversational tone
+- 🟢 **BE PROACTIVE** — When greeted, immediately: (1) \`check_tasks\` for pending decisions, (2) \`check_agent detail=all\` for listing status. Report findings without being asked.
+- 🟢 **ASP FLOW** — When a pending decision exists, accept it automatically and explain to the user.
+- 🟢 **USE THE RIGHT TOOL** — \`check_agent\` for agent info, \`update_agent_service\` for service changes, \`check_tasks\` for pending jobs, \`check_wallet\` for wallet, \`send_heartbeat\` for online status. Don't use generic commands — each tool handles its own onchainos call internally.
+- Always respond friendly and conversational
 - If a tool fails, explain what happened and suggest next steps
 - Format responses clearly: bullet points, tx hashes with Solscan links
-- If asked who you are, explain your capabilities with enthusiasm
-- You are Solana-only — don't mention Ethereum, Sepolia, KeeperHub, or EVM chains`;
+- You are Solana-only — never mention Ethereum, Sepolia, KeeperHub, or EVM chains`;
 
 // ===== Chat Agent =====
 
@@ -549,32 +606,140 @@ export class ChatAgent {
           return { tool: name, success: result.success || false, result };
         }
 
-        case 'run_okx_command': {
+        case 'check_agent': {
           const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
-          const fullCmd = `${onchainosPath} ${params.command} ${params.args || ''}`;
-          const timeout = params.timeout || 60000;
+          let cmd: string;
+          if (params.detail === 'services') {
+            cmd = `${onchainosPath} agent service-list --agent-id 4195`;
+          } else {
+            cmd = `${onchainosPath} agent get-agents --agent-ids 4195`;
+          }
+          const { exec } = await import('child_process');
           try {
-            // Use async exec instead of execSync to avoid blocking the event loop
-            const { exec } = await import('child_process');
             const stdout = await new Promise<string>((resolve, reject) => {
-              exec(fullCmd, { timeout, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string, stderr: string) => {
-                if (error) {
-                  reject({ error, stderr, stdout });
-                } else {
-                  resolve(stdout);
-                }
+              exec(cmd, { timeout: 30000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                if (error) reject({ error, stdout, stderr: error.stderr });
+                else resolve(stdout);
               });
             });
-            return { tool: name, success: true, result: { stdout, command: fullCmd } };
-          } catch (execErr: any) {
-            const stderr = execErr.stderr ? execErr.stderr.toString() : (execErr.error?.stderr?.toString() || execErr.message);
-            const partialStdout = execErr.stdout ? execErr.stdout.toString() : (execErr.error?.stdout?.toString() || '');
-            return {
-              tool: name,
-              success: false,
-              result: { stderr, partialStdout, command: fullCmd },
-              error: stderr,
-            };
+            return { tool: name, success: true, result: { stdout, command: cmd } };
+          } catch (e: any) {
+            return { tool: name, success: false, result: null, error: e.stderr || e.message };
+          }
+        }
+
+        case 'update_agent_service': {
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          if (params.operation === 'create') {
+            const svcName = params.serviceName || 'MEV Service';
+            const svcDesc = params.serviceDescription || 'AI-powered Solana MEV bundle service';
+            const svcType = params.serviceType || 'A2MCP';
+            const svcFee = params.fee || '0';
+            const svcEndpoint = params.endpoint || '';
+            const serviceJson = JSON.stringify([{
+              operation: 'create',
+              serviceName: svcName,
+              serviceDescription: svcDesc,
+              serviceType: svcType,
+              fee: svcFee,
+              ...(svcType === 'A2MCP' && svcEndpoint ? { endpoint: svcEndpoint } : {})
+            }]);
+            const cmd = `${onchainosPath} agent update --agent-id 4195 --service '${serviceJson}'`;
+            const { exec } = await import('child_process');
+            try {
+              const stdout = await new Promise<string>((resolve, reject) => {
+                exec(cmd, { timeout: 60000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                  if (error) reject({ error, stdout, stderr: error.stderr });
+                  else resolve(stdout);
+                });
+              });
+              return { tool: name, success: true, result: { stdout, command: cmd, serviceAdded: { name: svcName, type: svcType, fee: svcFee } } };
+            } catch (e: any) {
+              return { tool: name, success: false, result: null, error: e.stderr || e.message };
+            }
+          } else if (params.operation === 'update' || params.operation === 'delete') {
+            return { tool: name, success: false, result: null, error: 'For update/delete, first use check_agent to get the service ID, then tell me the ID and I will update this tool.' };
+          }
+          return { tool: name, success: false, result: null, error: 'Unknown operation' };
+        }
+
+        case 'check_tasks': {
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          const cmd = `${onchainosPath} agent pending-decisions-v2 request --job-id ${params.jobId || 'recent'} --role asp --agent-id 4195`;
+          const { exec } = await import('child_process');
+          try {
+            const stdout = await new Promise<string>((resolve, reject) => {
+              exec(cmd, { timeout: 30000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                if (error) reject({ error, stdout, stderr: error.stderr });
+                else resolve(stdout);
+              });
+            });
+            return { tool: name, success: true, result: { stdout, command: cmd } };
+          } catch (e: any) {
+            return { tool: name, success: false, result: null, error: e.stderr || e.message };
+          }
+        }
+
+        case 'accept_task': {
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          let cmd: string;
+          if (params.proof) {
+            cmd = `${onchainosPath} task deliver-v2 ${params.taskId} --proof ${params.proof}`;
+          } else if (params.price) {
+            cmd = `${onchainosPath} task accept ${params.taskId} --price ${params.price}`;
+          } else {
+            cmd = `${onchainosPath} task accept ${params.taskId} --price 0`;
+          }
+          const { exec } = await import('child_process');
+          try {
+            const stdout = await new Promise<string>((resolve, reject) => {
+              exec(cmd, { timeout: 30000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                if (error) reject({ error, stdout, stderr: error.stderr });
+                else resolve(stdout);
+              });
+            });
+            return { tool: name, success: true, result: { stdout, command: cmd } };
+          } catch (e: any) {
+            return { tool: name, success: false, result: null, error: e.stderr || e.message };
+          }
+        }
+
+        case 'check_wallet': {
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          let cmd: string;
+          switch (params.check) {
+            case 'balance': cmd = `${onchainosPath} wallet balance`; break;
+            case 'identity': cmd = `${onchainosPath} identity me`; break;
+            case 'status': default: cmd = `${onchainosPath} wallet status`; break;
+          }
+          const { exec } = await import('child_process');
+          try {
+            const stdout = await new Promise<string>((resolve, reject) => {
+              exec(cmd, { timeout: 15000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                if (error) reject({ error, stdout, stderr: error.stderr });
+                else resolve(stdout);
+              });
+            });
+            return { tool: name, success: true, result: { stdout, command: cmd } };
+          } catch (e: any) {
+            return { tool: name, success: false, result: null, error: e.stderr || e.message };
+          }
+        }
+
+        case 'send_heartbeat': {
+          const onchainosPath = process.env.ONCHAINOS_PATH || 'onchainos';
+          const cmd = `${onchainosPath} agent heartbeat --chain-index 196 --chain xlayer`;
+          const { exec } = await import('child_process');
+          try {
+            const stdout = await new Promise<string>((resolve, reject) => {
+              exec(cmd, { timeout: 15000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string) => {
+                if (error) reject({ error, stdout, stderr: error.stderr });
+                else resolve(stdout);
+              });
+            });
+            return { tool: name, success: true, result: { stdout, command: cmd } };
+          } catch (e: any) {
+            return { tool: name, success: false, result: null, error: e.stderr || e.message };
           }
         }
 
