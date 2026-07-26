@@ -14,8 +14,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install all dependencies
-RUN npm ci --only=production || npm install
+# Install production dependencies only (skip devDeps like canvas that need native build tools)
+RUN npm install --omit=dev
 
 # Copy source files
 COPY src/ ./src/
@@ -32,8 +32,6 @@ RUN npx tsc --noEmit || echo "Build warning: continuing with tsx runtime"
 # Environment
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV X402_ENABLED=false
-
 EXPOSE 8080
 
 # Entrypoint handles heartbeat + A2MCP
