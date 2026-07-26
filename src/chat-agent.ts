@@ -223,6 +223,8 @@ You have access to these tools — use them to help users:
 **🔧 OKX OnchainOS CLI Reference (Agent #4195 on X Layer):**
 The \`run_okx_command\` tool calls \`onchainos <command> [args]\`. Key subcommands:
 
+⚠️ **Wallet auth persists via Railway volume** — check \`wallet status\` first before any wallet ops. DO NOT attempt \`wallet login\` unless wallet status says unauthenticated.
+
 **Agent Commands:**
 - \`agent get-my-agents\` — List your registered agents
 - \`agent pre-check\` — Unified registration pre-check
