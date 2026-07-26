@@ -192,15 +192,16 @@ const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'onchainos_agent_create',
-    description: 'Create a new AI agent on OnchainOS. Can create Agent Service Providers (ASP), User agents, or Evaluators. You set the name, role, description, chain, and services JSON.',
+    description: 'Create a new AI agent on OnchainOS. Can create ASPs (requires at least 1 service + an uploaded avatar), User agents, or Evaluators. ASP agents MUST include services and a picture (uploaded via onchainos_agent or use a previous agent\'s avatar URL).',
     parameters: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Agent name' },
-        role: { type: 'string', enum: ['asp', 'user', 'evaluator'], description: 'Agent role' },
+        role: { type: 'string', enum: ['asp', 'user', 'evaluator'], description: 'Agent role. ASP requires services + picture.' },
         description: { type: 'string', description: 'Agent description / bio' },
         chain: { type: 'string', description: 'Blockchain (e.g. xlayer, solana)' },
-        services: { type: 'string', description: 'JSON string of services. E.g. [{ "type": "a2mcp", "endpoint": "https://...", "name": "...", "fee": "0 USDT", "description": "..." }]' }
+        services: { type: 'string', description: 'REQUIRED for ASP. JSON array. Each element needs: operation ("create"), serviceName, serviceDescription, serviceType ("A2A"|"A2MCP"), fee (plain number, USDT implied), endpoint (A2MCP only). Example: [{"operation":"create","serviceName":"MEV Bundle","serviceDescription":"Submit bundles via Jito","serviceType":"A2MCP","fee":"0.5","endpoint":"https://.../api/v1/bundle"}]' },
+        picture: { type: 'string', description: 'REQUIRED for ASP. Uploaded avatar URL. Use an existing agent\'s profilePicture URL (from onchainos_agent_list output) or upload a new one via the onchainos agent upload command first.' }
       },
       required: ['name', 'role', 'description', 'chain']
     }
@@ -381,6 +382,7 @@ const ONCHAINOS_COMMANDS: Record<string, (p: Record<string, any>) => string[]> =
   onchainos_agent_create: (p) => {
     const args = ['agent', 'create', '--name', p.name, '--role', p.role, '--description', p.description, '--chain', p.chain || 'xlayer'];
     if (p.services) args.push('--service', p.services);
+    if (p.picture) args.push('--picture', p.picture);
     return args;
   },
   onchainos_agent_update: (p) => {
@@ -490,8 +492,17 @@ Your server has the \`onchainos\` binary installed and logged into Cloud's OKX a
 
 **IMPORTANT**: Be careful with write operations (swap, create agent, limit orders) — confirm with the user first. Read-only tools (search, balance, status, news, signal) are safe to use proactively.
 
-**IMPORTANT: Agent #4195 ALREADY EXISTS as an ASP on OKX.AI.**
-You do NOT need to create or register a new agent. If asked to "register an ASP", explain that #4195 already exists and you can add services to it.
+**IMPORTANT: You have multiple agents on OKX.AI:**
+- Agent #4195 "Solana MEV Agent" — ASP, under review
+- Agent #9514 "MEV Bot 2" — ASP, with 2 services (bundle $0.5, analysis $0.75)
+- Agent #3505 "Cloudy" — User agent
+- Plus several rejected/old agents (#3512, #3506, #3499)
+
+You CAN create new agents with onchainos_agent_create. For ASP agents you MUST include:
+1. At least 1 service with proper schema (operation="create", serviceName, serviceType="A2MCP", fee as plain number, endpoint)
+2. An uploaded avatar URL for --picture
+
+If you don't have a picture URL handy, copy one from an existing agent's profilePicture (viewable via onchainos_agent_list).
 
 **Agent #4195 Quick Reference (X Layer, chain-index 196):**
 - Wallet: 0x18af8dc1b4071e8849c54d502ff0c6268f77800c ✅ Authenticated via Railway volume
