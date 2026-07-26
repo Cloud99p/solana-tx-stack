@@ -934,6 +934,11 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
     '/api/v1/fault': async (req, res) => { await handleFaultStatus(res); },
     '/api/v1/stats': async (req, res) => { await handleStats(res); },
     '/api/v1/webhooks': async (req, res) => { handleWebhooks(res); },
+    // x402 endpoints — GET returns 402 (OKX review system uses GET to check)
+    '/api/v1/bundle': async (req, res) => { x402PaymentRequired(res, PRICE_PER_BUNDLE); },
+    '/api/v1/analyze': async (req, res) => { x402PaymentRequired(res, PRICE_PER_ANALYSIS); },
+    '/api/v1/learn': async (req, res) => { x402PaymentRequired(res, 0); },
+    '/api/v1/chat': async (req, res) => { x402PaymentRequired(res, 0); },
     '/api/v1/capabilities': async (req, res) => {
       success(res, {
         agent: AGENT_NAME,
