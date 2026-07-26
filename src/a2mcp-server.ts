@@ -232,7 +232,8 @@ function x402PaymentRequired(res: http.ServerResponse, amountUsdt: number) {
       amount: amountUsdt,
       unit: 'USDT',
       chain: 'XLayer'
-    }
+    },
+    accepts: ['application/json']
   });
 }
 // ===== Handlers =====
