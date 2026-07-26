@@ -687,13 +687,23 @@ async function handleOkxCommand(req: http.IncomingMessage, res: http.ServerRespo
     const cmdTimeout = timeout || 30000;
     console.log(`[OKX-CMD] Executing: ${fullCmd.substring(0, 200)}`);
     try {
-      const stdout = execSync(fullCmd, { timeout: cmdTimeout, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-      console.log(`[OKX-CMD] Success (${stdout.length} chars)`);
-      success(res, { success: true, command: fullCmd, stdout });
+      // Use async exec instead of execSync to avoid blocking the event loop
+      const { exec } = require('child_process');
+      const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        exec(fullCmd, { timeout: cmdTimeout, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }, (error: any, stdout: string, stderr: string) => {
+          if (error) {
+            resolve({ stdout, stderr });
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+      console.log(`[OKX-CMD] Success (${result.stdout.length} chars)`);
+      success(res, { success: true, command: fullCmd, stdout: result.stdout });
     } catch (execErr: any) {
-      const stderr = execErr.stderr ? execErr.stderr.toString() : '';
-      const partialStdout = execErr.stdout ? execErr.stdout.toString() : '';
-      console.error(`[OKX-CMD] Failed: ${execErr.message.substring(0, 200)}`);
+      const stderr = execErr.stderr || '';
+      const partialStdout = execErr.stdout || '';
+      console.error(`[OKX-CMD] Failed: ${(execErr.message || '').substring(0, 200)}`);
       jsonResponse(res, 200, {
         success: false,
         command: fullCmd,
