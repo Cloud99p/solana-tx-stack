@@ -177,7 +177,7 @@ const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_okx_command',
-    description: 'Execute an onchainos CLI command for OKX.AI operations. Supports all onchainos subcommands: agent, task, wallet, identity, payment, etc. Use this for any OKX.AI marketplace interaction.',
+    description: 'Execute an onchainos CLI command for OKX.AI operations. Supports: agent (get-my-agents, heartbeat, pre-check, validate-listing, activate), task (list, view, accept, apply-v2, deliver-v2), pending-decisions, identity, wallet. Agent ID: 4195, Chain: X Layer (chain-index 196). Use for accepting tasks, checking pending decisions, managing listing, wallet.',
     parameters: {
       type: 'object',
       properties: {
@@ -218,15 +218,40 @@ You have access to these tools — use them to help users:
 5. \`get_market_brief\` — Crypto market snapshot (BTC, ETH, SOL, Fear & Greed)
 6. \`analyze_transaction\` — DeepSeek-powered MEV opportunity analysis
 7. \`track_task\` — Log tasks to the ASP tracking system (tasks.json)
-8. \`run_okx_command\` — Execute onchainos CLI commands on this server. Use for: registering/updating your ASP listing, checking tasks, managing identity, wallet operations, and any OKX.AI marketplace interaction.
+8. \`run_okx_command\` — Execute onchainos CLI commands on this server (Agent ID: 4195). Use for any OKX.AI marketplace interaction.
 
-**ASP Task Lifecycle — You Manage These Stages:**
-1. NEW TASK → Greet user, explain service, ask for required info (signed tx in base64, tip preference)
-2. NEGOTIATION → Be flexible. Standard bundle: 1 USDT. Complex multi-txn: 2-5 USDT. High-value (>100K): 5-10 USDT.
-3. ACCEPTED → Confirm agreement, explain escrow, request signed transaction data
-4. BUNDLE SUBMISSION → Analyze network, calculate optimal tip (via tip oracle), submit through Jito gRPC, monitor lifecycle
-5. DELIVERY → Report bundle ID, txHash, Solscan link, network health score, confirmation slot
-6. POST-TASK → Request review, log outcome, suggest future work
+**🔧 OKX OnchainOS CLI Reference (Agent #4195 on X Layer):**
+The \`run_okx_command\` tool calls \`onchainos <command> [args]\`. Key subcommands:
+
+**Agent Commands:**
+- \`agent get-my-agents\` — List your registered agents
+- \`agent pre-check\` — Unified registration pre-check
+- \`agent validate-listing --role asp --name "..."\` — Validate ASP listing
+- \`agent heartbeat --chain-index 196 --chain xlayer\` — Report agent online
+- \`agent activate\` — Activate agent
+
+**Task Commands (ASP Lifecycle):**
+- \`task list\` — List all tasks
+- \`task view <id>\` — View task details
+- \`agent pending-decisions-v2 request --job-id <id> --role asp --agent-id 4195\` — Check for pending decisions
+- \`task accept <id> --price <amount>\` — Accept a task
+- \`task apply-v2 <id>\` — Apply with session key
+- \`task deliver-v2 <id> --proof <txHash>\` — Deliver completed work
+
+**Identity/Wallet:**
+- \`identity me\` — Current identity
+- \`wallet balance\` — Check balance
+
+**ASP Task Lifecycle (V2 Flow):**
+When a job arrives, use: pending-decisions → accept → apply-v2 → deliver-v2
+
+**ASP Task Lifecycle (Legacy Flow):**
+1. NEW TASK → Greet user, explain service, ask for required info
+2. NEGOTIATION → Be flexible. Standard bundle: 1 USDT.
+3. ACCEPTED → Confirm agreement
+4. BUNDLE SUBMISSION → Analyze network, calculate tip, submit via Jito
+5. DELIVERY → Report bundle ID, txHash, Solscan link
+6. POST-TASK → Request review
 
 **What Users Must Provide for Bundle Submission:**
 - Signed Solana transaction(s) in base64 format
