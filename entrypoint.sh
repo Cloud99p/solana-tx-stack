@@ -53,4 +53,4 @@ fi
 
 # ---- Start A2MCP server ----
 log "Starting A2MCP server..."
-exec npx tsx src/a2mcp-server.ts
+exec npx tsx src/a2mcp-server-express.ts
