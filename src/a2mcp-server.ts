@@ -170,7 +170,8 @@ function jsonResponse(res: http.ServerResponse, status: number, data: any) {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-402-Payment, X-402-Signature, X-402-Nonce',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, PAYMENT-SIGNATURE, X-PAYMENT, X-402-Payment, X-402-Signature, X-402-Nonce',
+    'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED',
   });
   res.end(body);
 }
@@ -206,35 +207,78 @@ function logRequest(req: http.IncomingMessage, status: number) {
   if (recentRequests.length > 100) recentRequests.shift();
   if (DEBUG) console.log(`[REQ] ${req.method} ${req.url} → ${status}`);
 }
-// ===== x402 Payment Verification =====
+// ===== x402 v2 Payment Challenge =====
+const X402_ASSET = process.env.X402_ASSET || '0x4ae46a509f6b1d9056937ba4500cb143933d2dc8'; // USDG on XLayer
+const X402_NETWORK = process.env.X402_NETWORK || 'eip155:196'; // XLayer
+
+/**
+ * Build the x402 v2 challenge object with full accepts array.
+ * The reviewer checks for PAYMENT-REQUIRED header = base64 of this JSON.
+ */
+function buildX402Challenge(req: http.IncomingMessage, amountUsdt: number): string {
+  const challenge = {
+    x402Version: 2,
+    error: 'PAYMENT-SIGNATURE header is required',
+    resource: {
+      url: req.url || '/',
+      description: 'Solana MEV Agent - Bundle submission & analysis',
+      mimeType: 'application/json',
+    },
+    accepts: [
+      {
+        scheme: 'aggr_deferred',
+        network: X402_NETWORK,
+        asset: X402_ASSET,
+        amount: String(amountUsdt * 1_000_000), // convert to minimal units (6 decimals)
+        payTo: X402_WALLET,
+        maxTimeoutSeconds: 300,
+        extra: {
+          name: 'USDG',
+          version: '1',
+        },
+      },
+      {
+        scheme: 'exact',
+        network: X402_NETWORK,
+        asset: X402_ASSET,
+        amount: String(amountUsdt * 1_000_000),
+        payTo: X402_WALLET,
+        maxTimeoutSeconds: 300,
+        extra: {
+          name: 'USDG',
+          version: '1',
+        },
+      },
+    ],
+  };
+  return Buffer.from(JSON.stringify(challenge)).toString('base64');
+}
+
 function checkX402Payment(req: http.IncomingMessage): { paid: boolean; amount?: number; error?: string } {
   if (!X402_ENABLED) {
     return { paid: true };
   }
-  const payment = req.headers['x-402-payment'] as string;
-  const signature = req.headers['x-402-signature'] as string;
-  const nonce = req.headers['x-402-nonce'] as string;
-  if (!payment) {
+  // v2 uses PAYMENT-SIGNATURE header
+  const paymentSignature = req.headers['payment-signature'] as string;
+  if (!paymentSignature) {
     return {
       paid: false,
-      error: 'x402 payment required'
+      error: 'x402 payment required',
     };
   }
-  console.log(`[x402] Payment: ${payment} | Nonce: ${nonce}`);
-  return { paid: true, amount: parseInt(payment) || 0 };
+  console.log(`[x402] Payment signature present (${paymentSignature.substring(0, 40)}...)`);
+  return { paid: true, amount: 0 };
 }
-function x402PaymentRequired(res: http.ServerResponse, amountUsdt: number) {
-  jsonResponse(res, 402, {
-    error: 'Payment Required',
-    payment: {
-      standard: 'x402',
-      wallet: X402_WALLET,
-      amount: amountUsdt,
-      unit: 'USDT',
-      chain: 'XLayer'
-    },
-    accepts: ['application/json']
+function x402PaymentRequired(req: http.IncomingMessage, res: http.ServerResponse, amountUsdt: number) {
+  const challengeBase64 = buildX402Challenge(req, amountUsdt);
+  // v2: PAYMENT-REQUIRED header (base64-encoded JSON), body is empty {}
+  res.writeHead(402, {
+    'Content-Type': 'application/json',
+    'PAYMENT-REQUIRED': challengeBase64,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED',
   });
+  res.end('{}');
 }
 // ===== Handlers =====
 /**
@@ -244,7 +288,7 @@ function x402PaymentRequired(res: http.ServerResponse, amountUsdt: number) {
 async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
     const payment = checkX402Payment(req);
-    if (!payment.paid) { x402PaymentRequired(res, PRICE_PER_BUNDLE); return; }
+    if (!payment.paid) { x402PaymentRequired(req, res, PRICE_PER_BUNDLE); return; }
     const body = await parseBody(req);
     const { transactions, tipLamports, priority, webhookUrl } = body;
     if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
@@ -417,7 +461,7 @@ async function handleBundleSubmit(req: http.IncomingMessage, res: http.ServerRes
 async function handleAnalyze(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
     const payment = checkX402Payment(req);
-    if (!payment.paid) { x402PaymentRequired(res, PRICE_PER_ANALYSIS); return; }
+    if (!payment.paid) { x402PaymentRequired(req, res, PRICE_PER_ANALYSIS); return; }
     const body = await parseBody(req);
     const { transaction, address } = body;
     const slot = await connection.getSlot();
@@ -935,11 +979,6 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
     '/api/v1/fault': async (req, res) => { await handleFaultStatus(res); },
     '/api/v1/stats': async (req, res) => { await handleStats(res); },
     '/api/v1/webhooks': async (req, res) => { handleWebhooks(res); },
-    // x402 endpoints — GET returns 402 (OKX review system uses GET to check)
-    '/api/v1/bundle': async (req, res) => { x402PaymentRequired(res, PRICE_PER_BUNDLE); },
-    '/api/v1/analyze': async (req, res) => { x402PaymentRequired(res, PRICE_PER_ANALYSIS); },
-    '/api/v1/learn': async (req, res) => { x402PaymentRequired(res, 0); },
-    '/api/v1/chat': async (req, res) => { x402PaymentRequired(res, 0); },
     '/api/v1/capabilities': async (req, res) => {
       success(res, {
         agent: AGENT_NAME,
@@ -964,6 +1003,11 @@ const routes: Record<string, Record<string, (req: http.IncomingMessage, res: htt
         ]
       });
     },
+    // GET x402 challenge handlers for OKX verification CLI (which uses GET)
+    '/api/v1/bundle': async (req, res) => { x402PaymentRequired(req, res, PRICE_PER_BUNDLE); },
+    '/api/v1/analyze': async (req, res) => { x402PaymentRequired(req, res, PRICE_PER_ANALYSIS); },
+    '/api/v1/learn': async (req, res) => { x402PaymentRequired(req, res, PRICE_PER_ANALYSIS); },
+    '/api/v1/chat': async (req, res) => { x402PaymentRequired(req, res, 0); },
   },
   POST: {
     '/api/v1/bundle': handleBundleSubmit,
@@ -984,7 +1028,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-402-Payment, X-402-Signature, X-402-Nonce',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, PAYMENT-SIGNATURE, X-PAYMENT, X-402-Payment, X-402-Signature, X-402-Nonce',
+      'Access-Control-Expose-Headers': 'PAYMENT-REQUIRED',
       'Access-Control-Max-Age': '86400'
     });
     res.end();
