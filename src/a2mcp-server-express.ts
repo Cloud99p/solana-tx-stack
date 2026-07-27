@@ -175,6 +175,21 @@ app.post('/api/v1/chat', x402Middleware(0), (req: Request, res: Response) => {
 });
 
 // Free / public endpoints
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    agentId: AGENT_ID,
+    version: AGENT_VERSION,
+    config: {
+      x402Enabled: X402_ENABLED,
+      pricing: `${PRICE_PER_BUNDLE} USDT/bundle, ${PRICE_PER_ANALYSIS} USDT/analysis`,
+      network: 'X Layer (eip155:196)',
+      asset: 'USDT0',
+    },
+  });
+});
+
 app.get('/api/v1/health', (_req: Request, res: Response) => {
   res.json({
     status: 'healthy',
