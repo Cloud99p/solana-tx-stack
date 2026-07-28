@@ -39,6 +39,19 @@ const PAY_TO = X402_WALLET || process.env.PAY_TO || '8ifrorg6DFECBXFA6fikQ5YkZAh
 const app = express();
 app.use(express.json());
 
+// ===== CORS — allow Vercel frontend =====
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'https://solana-tx-stack-cnz8eqfxe-emmanuelhosea09-7240s-projects.vercel.app';
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, PAYMENT-SIGNATURE, PAYMENT-AMOUNT, PAYMENT-ASSET, PAYMENT-NETWORK');
+  if (_req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 // ===== x402 Challenge Builder (SDK-validated) =====
 /**
  * Builds an x402 v2 challenge using the @okxweb3/x402-core/schemas
