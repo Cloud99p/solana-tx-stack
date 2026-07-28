@@ -31,6 +31,13 @@ const X402_WALLET = process.env.X402_WALLET || '';
 const PRICE_PER_BUNDLE = parseInt(process.env.PRICE_PER_BUNDLE || '0');
 const PRICE_PER_ANALYSIS = parseInt(process.env.PRICE_PER_ANALYSIS || '0');
 
+// Subsystem status (for frontend display)
+const JITO_ENABLED = process.env.JITO_ENABLED === 'true';
+const DEEPSEEK_ENABLED = process.env.DEEPSEEK_ENABLED === 'true';
+const JITO_BLOCK_ENGINE_URL = process.env.JITO_BLOCK_ENGINE_URL || '';
+const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || '';
+const SOLANA_NETWORK = process.env.SOLANA_NETWORK || 'devnet';
+
 // XLayer config — USDT0 on X Layer
 const X402_ASSET = process.env.X402_ASSET || '0x779ded0c9e1022225f8e0630b35a9b54be713736';
 const X402_NETWORK = process.env.X402_NETWORK || 'eip155:196';
@@ -230,6 +237,14 @@ app.get('/api/v1/status', (_req: Request, res: Response) => {
     stack: {
       paymentStandard: X402_ENABLED ? 'x402 v2 (OKX Payment SDK)' : 'disabled (dev mode)',
       pricing: `${PRICE_PER_BUNDLE} USDT/bundle, ${PRICE_PER_ANALYSIS} USDT/analysis`,
+      jito: JITO_ENABLED ? `connected (${SOLANA_NETWORK})` : 'Off',
+      network: SOLANA_NETWORK,
+      rpc: SOLANA_RPC_URL || 'not configured',
+      jitoEngine: JITO_BLOCK_ENGINE_URL || 'not configured',
+    },
+    ai: {
+      deepseekEnabled: DEEPSEEK_ENABLED,
+      model: DEEPSEEK_ENABLED ? 'deepseek-chat' : 'none',
     },
   });
 });
