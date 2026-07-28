@@ -31,12 +31,14 @@ const X402_WALLET = process.env.X402_WALLET || '';
 const PRICE_PER_BUNDLE = parseInt(process.env.PRICE_PER_BUNDLE || '0');
 const PRICE_PER_ANALYSIS = parseInt(process.env.PRICE_PER_ANALYSIS || '0');
 
-// Subsystem status (for frontend display)
-const JITO_ENABLED = process.env.JITO_ENABLED === 'true';
-const DEEPSEEK_ENABLED = process.env.DEEPSEEK_ENABLED === 'true';
+// Subsystem status (auto-detect from env)
+const JITO_KEYPAIR_B64 = process.env.JITO_AUTH_KEYPAIR_B64 || '';
+const JITO_KEYPAIR_PATH = process.env.JITO_AUTH_KEYPAIR_PATH || '';
+const JITO_ENABLED = !!(JITO_KEYPAIR_B64 || (JITO_KEYPAIR_PATH && require('fs').existsSync(JITO_KEYPAIR_PATH)));
+const DEEPSEEK_ENABLED = !!(process.env.AI_API_KEY && process.env.AI_API_KEY !== 'sk-your-deepseek-api-key-here');
 const JITO_BLOCK_ENGINE_URL = process.env.JITO_BLOCK_ENGINE_URL || '';
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || '';
-const SOLANA_NETWORK = process.env.SOLANA_NETWORK || 'devnet';
+const SOLANA_NETWORK = process.env.SOLANA_NETWORK || (SOLANA_RPC_URL.includes('mainnet') ? 'mainnet' : 'devnet');
 
 // XLayer config — USDT0 on X Layer
 const X402_ASSET = process.env.X402_ASSET || '0x779ded0c9e1022225f8e0630b35a9b54be713736';
@@ -244,7 +246,7 @@ app.get('/api/v1/status', (_req: Request, res: Response) => {
     },
     ai: {
       deepseekEnabled: DEEPSEEK_ENABLED,
-      model: DEEPSEEK_ENABLED ? 'deepseek-chat' : 'none',
+      model: DEEPSEEK_ENABLED ? (process.env.AI_MODEL || 'deepseek-chat') : 'none',
     },
   });
 });
